@@ -714,8 +714,10 @@ function render(ts) {
     if (!ls || !rs || !lw || !rw) continue;
     if (lw.visibility < 0.4 || rw.visibility < 0.4) continue;
 
-    // Both wrists must be above their respective shoulders
-    if (lw.y < ls.y && rw.y < rs.y) {
+    // Both wrists must be clearly above their respective shoulders
+    const shoulderSpan = Math.abs(rs.x - ls.x);
+    const threshold = shoulderSpan * 0.5; // must be half a shoulder-width above
+    if (lw.y < ls.y - threshold && rw.y < rs.y - threshold) {
       const lwx = (1-lw.x)*W, lwy = lw.y*H;
       const rwx = (1-rw.x)*W, rwy = rw.y*H;
 
