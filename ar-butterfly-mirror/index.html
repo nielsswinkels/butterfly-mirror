@@ -670,14 +670,24 @@ function render(ts) {
     const sDist = Math.hypot(rx-lx, ry-ly);
     const wScale = sDist * 1.15;
 
-    // Motion → faster flap
+    // Motion → faster flap (using phase accumulator for smooth animation)
     const key = `p${i}`;
     const prev = prevPositions.get(key);
     let motion = 0;
-    if (prev) motion = Math.hypot(cx-prev.x, cy-prev.y);
-    prevPositions.set(key, {x:cx, y:cy});
-    const flapSpeed = 2.5 + Math.min(motion*0.06, 5);
-    const flapAngle = Math.sin(t*flapSpeed + i*1.1) * 0.65;
+    if (prev) {
+      motion = Math.hypot(cx - prev.x, cy - prev.y);
+      // Smooth the motion value itself to avoid spikes
+      prev.smoothMotion = (prev.smoothMotion || 0) * 0.85 + motion * 0.15;
+      // Accumulate phase smoothly instead of multiplying t * speed
+      const flapSpeed = 1.8 + Math.min(prev.smoothMotion * 0.04, 3);
+      const dt = t - (prev.t || t);
+      prev.phase = (prev.phase || i * 1.1) + flapSpeed * dt;
+      prev.x = cx; prev.y = cy; prev.t = t;
+    } else {
+      prevPositions.set(key, { x: cx, y: cy, t, phase: i * 1.1, smoothMotion: 0 });
+    }
+    const phase = prev ? prev.phase : 0;
+    const flapAngle = Math.sin(phase) * 0.5;
 
     // Wing glow
     const gg = ctx.createRadialGradient(cx,cy,wScale*0.15,cx,cy,wScale*1.6);
