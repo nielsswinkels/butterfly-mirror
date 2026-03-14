@@ -128,18 +128,34 @@ const wingPalettes = [
 const trees = [], bgParticles = [], orbs = [], mushrooms = [];
 
 (function initForest() {
+  // Pre-compute branch data for each tree
+  function makeBranches(h, tw) {
+    const count = 2 + Math.floor(h * 4);
+    const branches = [];
+    for (let b = 0; b < count; b++) {
+      branches.push({
+        yFrac: 0.4 + b * 0.15,
+        side: b % 2 === 0 ? 1 : -1,
+        lenMul: 3 + Math.random() * 4,
+        widthMul: 0.3 * (1 - b * 0.15),
+      });
+    }
+    return branches;
+  }
   // Background trees (further away, smaller)
-  for (let i = 0; i < 8; i++) trees.push({
-    x: i/8 + (Math.random()-0.5)*0.1, h: 0.25 + Math.random()*0.25,
+  for (let i = 0; i < 8; i++) { const h = 0.25+Math.random()*0.25; trees.push({
+    x: i/8 + (Math.random()-0.5)*0.1, h,
     tw: 0.008 + Math.random()*0.012, layer: 0,
-    hue: 100 + Math.random()*60, gp: Math.random()*6.28, gs: 0.3+Math.random()*0.4
-  });
+    hue: 100 + Math.random()*60, gp: Math.random()*6.28, gs: 0.3+Math.random()*0.4,
+    branches: makeBranches(h, 0.01),
+  });}
   // Foreground trees (closer, bigger, spread across width)
-  for (let i = 0; i < 10; i++) trees.push({
-    x: i/10 + (Math.random()-0.5)*0.08, h: 0.4 + Math.random()*0.45,
+  for (let i = 0; i < 10; i++) { const h = 0.4+Math.random()*0.45; trees.push({
+    x: i/10 + (Math.random()-0.5)*0.08, h,
     tw: 0.015 + Math.random()*0.025, layer: 1,
-    hue: 80 + Math.random()*80, gp: Math.random()*6.28, gs: 0.2+Math.random()*0.5
-  });
+    hue: 80 + Math.random()*80, gp: Math.random()*6.28, gs: 0.2+Math.random()*0.5,
+    branches: makeBranches(h, 0.02),
+  });}
   // Sort so back-layer draws first
   trees.sort((a,b) => a.layer - b.layer);
 
@@ -162,7 +178,7 @@ const trees = [], bgParticles = [], orbs = [], mushrooms = [];
   });
 })();
 
-function drawTree(tx, bY, tH, tw, hue, gi, W, H) {
+function drawTree(tx, bY, tH, tw, hue, gi, W, H, branches) {
   // ── Trunk with bark texture ──
   const trunkGrad = ctx.createLinearGradient(tx-tw, bY, tx+tw, bY);
   trunkGrad.addColorStop(0, '#1e0e06');
@@ -178,18 +194,16 @@ function drawTree(tx, bY, tH, tw, hue, gi, W, H) {
   ctx.quadraticCurveTo(tx + tw*1.2, bY - tH*0.5, tx + tw, bY);
   ctx.fill();
 
-  // ── Branches ──
-  const branchCount = 2 + Math.floor(tH / H * 4);
+  // ── Branches (pre-computed, stable) ──
   ctx.strokeStyle = '#3a2010';
   ctx.lineCap = 'round';
-  for (let b = 0; b < branchCount; b++) {
-    const by = bY - tH * (0.4 + b * 0.15);
-    const side = b % 2 === 0 ? 1 : -1;
-    const bLen = tw * (3 + Math.random() * 4);
-    ctx.lineWidth = tw * 0.3 * (1 - b*0.15);
+  for (const br of branches) {
+    const by = bY - tH * br.yFrac;
+    const bLen = tw * br.lenMul;
+    ctx.lineWidth = tw * br.widthMul;
     ctx.beginPath();
     ctx.moveTo(tx, by);
-    ctx.quadraticCurveTo(tx + side*bLen*0.5, by - tH*0.05, tx + side*bLen, by - tH*0.08);
+    ctx.quadraticCurveTo(tx + br.side*bLen*0.5, by - tH*0.05, tx + br.side*bLen, by - tH*0.08);
     ctx.stroke();
   }
 
@@ -293,7 +307,7 @@ function drawForest(t) {
   for (const tr of trees) {
     const tx = tr.x * W, bY = H * 0.85, tH = tr.h * H, tw = tr.tw * W;
     const gi = 0.3 + 0.2 * Math.sin(t*tr.gs + tr.gp);
-    drawTree(tx, bY, tH, tw, tr.hue, gi, W, H);
+    drawTree(tx, bY, tH, tw, tr.hue, gi, W, H, tr.branches);
   }
 
   // Glowing mushrooms
