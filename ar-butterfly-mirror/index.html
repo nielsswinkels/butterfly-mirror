@@ -187,12 +187,23 @@ function drawTree(tx, bY, tH, tw, hue, gi, W, H, branches) {
   trunkGrad.addColorStop(1, '#1e0e06');
   ctx.fillStyle = trunkGrad;
   ctx.beginPath();
-  // Slightly curved trunk using bezier
-  ctx.moveTo(tx - tw, bY);
+  // Slightly curved trunk with flared root base
+  const rootW = tw * 2.5; // roots spread wider than trunk
+  ctx.moveTo(tx - rootW, bY);
+  ctx.quadraticCurveTo(tx - tw*1.5, bY - tH*0.08, tx - tw, bY - tH*0.12);
   ctx.quadraticCurveTo(tx - tw*1.2, bY - tH*0.5, tx - tw*0.5, bY - tH);
   ctx.lineTo(tx + tw*0.5, bY - tH);
-  ctx.quadraticCurveTo(tx + tw*1.2, bY - tH*0.5, tx + tw, bY);
+  ctx.quadraticCurveTo(tx + tw*1.2, bY - tH*0.5, tx + tw, bY - tH*0.12);
+  ctx.quadraticCurveTo(tx + tw*1.5, bY - tH*0.08, tx + rootW, bY);
   ctx.fill();
+
+  // Soft moss/shadow at trunk base to blend into ground
+  const baseGrad = ctx.createRadialGradient(tx, bY, tw*0.5, tx, bY, rootW*1.8);
+  baseGrad.addColorStop(0, 'rgba(15,40,15,0.6)');
+  baseGrad.addColorStop(0.5, 'rgba(12,35,12,0.3)');
+  baseGrad.addColorStop(1, 'rgba(10,30,10,0)');
+  ctx.fillStyle = baseGrad;
+  ctx.beginPath(); ctx.arc(tx, bY, rootW*1.8, 0, 6.28); ctx.fill();
 
   // ── Branches (pre-computed, stable) ──
   ctx.strokeStyle = '#3a2010';
