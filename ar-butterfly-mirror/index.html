@@ -17,6 +17,7 @@
     height: 100vh;
   }
   video { display: none; }
+  canvas.offscreen { display: none; }
   #fullscreenBtn {
     position: fixed;
     bottom: 20px;
@@ -80,6 +81,10 @@
 <canvas id="mainCanvas"></canvas>
 <video id="webcam" playsinline autoplay muted></video>
 
+<!-- Offscreen canvases for compositing -->
+<canvas id="maskCanvas" class="offscreen"></canvas>
+<canvas id="personCanvas" class="offscreen"></canvas>
+
 <script type="module">
 const { PoseLandmarker, FilesetResolver } = await import(
   'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/+esm'
@@ -90,7 +95,16 @@ const ctx = canvas.getContext('2d');
 const video = document.getElementById('webcam');
 const loadingEl = document.getElementById('loading');
 
-function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+// Offscreen canvases for person cutout compositing
+const maskCanvas = document.getElementById('maskCanvas');
+const maskCtx = maskCanvas.getContext('2d');
+const personCanvas = document.getElementById('personCanvas');
+const personCtx = personCanvas.getContext('2d');
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
 window.addEventListener('resize', resize);
 resize();
 
@@ -148,11 +162,9 @@ function drawForest(t) {
   // trees
   for (const tr of trees) {
     const tx = tr.x*W, bY = H, tH = tr.h*H, tw = tr.tw*W;
-    // trunk
     ctx.fillStyle = '#3a2010';
     ctx.beginPath(); ctx.moveTo(tx-tw,bY); ctx.lineTo(tx-tw*0.6,bY-tH);
     ctx.lineTo(tx+tw*0.6,bY-tH); ctx.lineTo(tx+tw,bY); ctx.fill();
-    // canopy glow
     const gi = 0.25+0.2*Math.sin(t*tr.gs+tr.gp);
     const cr = tr.cr*W, cy = bY-tH;
     const cg = ctx.createRadialGradient(tx,cy,cr*0.05,tx,cy,cr);
@@ -162,7 +174,7 @@ function drawForest(t) {
     ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(tx,cy,cr,0,6.28); ctx.fill();
   }
 
-  // particles
+  // floating particles
   for (const p of bgParticles) {
     p.x += Math.sin(t*0.5+p.dr)*0.0003;
     p.y -= p.sp; if (p.y<-0.05){p.y=1.05;p.x=Math.random();}
@@ -171,7 +183,7 @@ function drawForest(t) {
     ctx.beginPath(); ctx.arc(p.x*W,p.y*H,p.sz*fl,0,6.28); ctx.fill();
   }
 
-  // orbs
+  // glowing orbs
   for (const o of orbs) {
     o.x+=o.dx; o.y+=o.dy;
     if(o.x<0||o.x>1)o.dx*=-1; if(o.y<0.15||o.y>0.95)o.dy*=-1;
@@ -187,80 +199,80 @@ function drawForest(t) {
 // ═══════════════════════════════════════════════════════════════════
 // BUTTERFLY WINGS (pure Canvas2D bezier curves + gradients)
 // ═══════════════════════════════════════════════════════════════════
-function drawWing(cx, cy, scale, flapAngle, pal, side, t) {
-  ctx.save();
-  ctx.translate(cx, cy);
+function drawWing(targetCtx, cx, cy, scale, flapAngle, pal, side, t) {
+  targetCtx.save();
+  targetCtx.translate(cx, cy);
   const fs = Math.cos(flapAngle);
-  ctx.scale(side * fs, 1);
+  targetCtx.scale(side * fs, 1);
   const s = scale;
 
   // ── upper wing ──
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.bezierCurveTo(s*0.5, -s*0.9, s*1.3, -s*1.1, s*1.0, -s*0.35);
-  ctx.bezierCurveTo(s*1.35, -s*0.55, s*1.45, -s*0.05, s*0.85, s*0.1);
-  ctx.bezierCurveTo(s*0.45, s*0.08, s*0.15, 0.02, 0, 0);
-  ctx.closePath();
-  const ug = ctx.createRadialGradient(s*0.55,-s*0.35,0,s*0.55,-s*0.35,s*1.1);
+  targetCtx.beginPath();
+  targetCtx.moveTo(0, 0);
+  targetCtx.bezierCurveTo(s*0.5, -s*0.9, s*1.3, -s*1.1, s*1.0, -s*0.35);
+  targetCtx.bezierCurveTo(s*1.35, -s*0.55, s*1.45, -s*0.05, s*0.85, s*0.1);
+  targetCtx.bezierCurveTo(s*0.45, s*0.08, s*0.15, 0.02, 0, 0);
+  targetCtx.closePath();
+  const ug = targetCtx.createRadialGradient(s*0.55,-s*0.35,0,s*0.55,-s*0.35,s*1.1);
   ug.addColorStop(0, pal.acc); ug.addColorStop(0.35, pal.pri);
   ug.addColorStop(0.75, pal.sec); ug.addColorStop(1,'rgba(0,0,0,0.25)');
-  ctx.fillStyle = ug; ctx.globalAlpha = 0.88; ctx.fill();
-  ctx.strokeStyle='rgba(255,255,255,0.3)'; ctx.lineWidth=1.5; ctx.stroke();
+  targetCtx.fillStyle = ug; targetCtx.globalAlpha = 0.88; targetCtx.fill();
+  targetCtx.strokeStyle='rgba(255,255,255,0.3)'; targetCtx.lineWidth=1.5; targetCtx.stroke();
 
   // veins
-  ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=1;
-  ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(s*0.45,-s*0.55,s*0.95,-s*0.35); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(s*0.3,-s*0.8,s*0.75,-s*0.7); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(s*0.7,-s*0.3,s*1.1,-s*0.1); ctx.stroke();
+  targetCtx.strokeStyle='rgba(255,255,255,0.18)'; targetCtx.lineWidth=1;
+  targetCtx.beginPath(); targetCtx.moveTo(0,0); targetCtx.quadraticCurveTo(s*0.45,-s*0.55,s*0.95,-s*0.35); targetCtx.stroke();
+  targetCtx.beginPath(); targetCtx.moveTo(0,0); targetCtx.quadraticCurveTo(s*0.3,-s*0.8,s*0.75,-s*0.7); targetCtx.stroke();
+  targetCtx.beginPath(); targetCtx.moveTo(0,0); targetCtx.quadraticCurveTo(s*0.7,-s*0.3,s*1.1,-s*0.1); targetCtx.stroke();
 
   // eyespot
   const ex=s*0.65, ey=-s*0.45, er=s*0.13;
-  const eg=ctx.createRadialGradient(ex,ey,0,ex,ey,er);
+  const eg=targetCtx.createRadialGradient(ex,ey,0,ex,ey,er);
   eg.addColorStop(0,'#fff'); eg.addColorStop(0.25,pal.acc);
   eg.addColorStop(0.6,'rgba(0,0,0,0.5)'); eg.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=eg; ctx.globalAlpha=0.7;
-  ctx.beginPath(); ctx.arc(ex,ey,er,0,6.28); ctx.fill();
+  targetCtx.fillStyle=eg; targetCtx.globalAlpha=0.7;
+  targetCtx.beginPath(); targetCtx.arc(ex,ey,er,0,6.28); targetCtx.fill();
 
   // second smaller eyespot
   const e2x=s*0.9, e2y=-s*0.15, e2r=s*0.07;
-  const e2g=ctx.createRadialGradient(e2x,e2y,0,e2x,e2y,e2r);
+  const e2g=targetCtx.createRadialGradient(e2x,e2y,0,e2x,e2y,e2r);
   e2g.addColorStop(0,'#fff'); e2g.addColorStop(0.4,pal.pri);
   e2g.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=e2g; ctx.globalAlpha=0.5;
-  ctx.beginPath(); ctx.arc(e2x,e2y,e2r,0,6.28); ctx.fill();
+  targetCtx.fillStyle=e2g; targetCtx.globalAlpha=0.5;
+  targetCtx.beginPath(); targetCtx.arc(e2x,e2y,e2r,0,6.28); targetCtx.fill();
 
   // ── lower wing ──
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.bezierCurveTo(s*0.25, s*0.15, s*1.05, s*0.25, s*0.85, s*0.65);
-  ctx.bezierCurveTo(s*0.95, s*0.9, s*0.5, s*1.0, s*0.2, s*0.75);
-  ctx.bezierCurveTo(s*0.05, s*0.45, 0, s*0.1, 0, 0);
-  ctx.closePath();
-  const lg=ctx.createRadialGradient(s*0.45,s*0.5,0,s*0.45,s*0.5,s*0.85);
+  targetCtx.beginPath();
+  targetCtx.moveTo(0, 0);
+  targetCtx.bezierCurveTo(s*0.25, s*0.15, s*1.05, s*0.25, s*0.85, s*0.65);
+  targetCtx.bezierCurveTo(s*0.95, s*0.9, s*0.5, s*1.0, s*0.2, s*0.75);
+  targetCtx.bezierCurveTo(s*0.05, s*0.45, 0, s*0.1, 0, 0);
+  targetCtx.closePath();
+  const lg=targetCtx.createRadialGradient(s*0.45,s*0.5,0,s*0.45,s*0.5,s*0.85);
   lg.addColorStop(0,pal.pri); lg.addColorStop(0.5,pal.sec); lg.addColorStop(1,'rgba(0,0,0,0.25)');
-  ctx.fillStyle=lg; ctx.globalAlpha=0.82; ctx.fill();
-  ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=1.5; ctx.stroke();
+  targetCtx.fillStyle=lg; targetCtx.globalAlpha=0.82; targetCtx.fill();
+  targetCtx.strokeStyle='rgba(255,255,255,0.25)'; targetCtx.lineWidth=1.5; targetCtx.stroke();
 
   // lower veins
-  ctx.strokeStyle='rgba(255,255,255,0.15)'; ctx.lineWidth=1;
-  ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(s*0.3,s*0.4,s*0.65,s*0.7); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(s*0.5,s*0.3,s*0.85,s*0.5); ctx.stroke();
+  targetCtx.strokeStyle='rgba(255,255,255,0.15)'; targetCtx.lineWidth=1;
+  targetCtx.beginPath(); targetCtx.moveTo(0,0); targetCtx.quadraticCurveTo(s*0.3,s*0.4,s*0.65,s*0.7); targetCtx.stroke();
+  targetCtx.beginPath(); targetCtx.moveTo(0,0); targetCtx.quadraticCurveTo(s*0.5,s*0.3,s*0.85,s*0.5); targetCtx.stroke();
 
   // scalloped edge dots
   for(let i=0;i<5;i++){
     const a=(i/5)*1.8+0.4, dx=s*0.5+Math.cos(a)*s*0.38, dy=s*0.55+Math.sin(a)*s*0.38;
-    ctx.fillStyle=pal.acc; ctx.globalAlpha=0.35;
-    ctx.beginPath(); ctx.arc(dx,dy,s*0.04,0,6.28); ctx.fill();
+    targetCtx.fillStyle=pal.acc; targetCtx.globalAlpha=0.35;
+    targetCtx.beginPath(); targetCtx.arc(dx,dy,s*0.04,0,6.28); targetCtx.fill();
   }
 
-  // trailing wing tip (small decorative lobe)
-  ctx.beginPath();
-  ctx.moveTo(s*0.2, s*0.75);
-  ctx.bezierCurveTo(s*0.15, s*1.05, s*0.35, s*1.1, s*0.4, s*0.85);
-  ctx.fillStyle=pal.sec; ctx.globalAlpha=0.5; ctx.fill();
+  // trailing wing tip
+  targetCtx.beginPath();
+  targetCtx.moveTo(s*0.2, s*0.75);
+  targetCtx.bezierCurveTo(s*0.15, s*1.05, s*0.35, s*1.1, s*0.4, s*0.85);
+  targetCtx.fillStyle=pal.sec; targetCtx.globalAlpha=0.5; targetCtx.fill();
 
-  ctx.globalAlpha = 1;
-  ctx.restore();
+  targetCtx.globalAlpha = 1;
+  targetCtx.restore();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -279,69 +291,106 @@ function getSparkles(id) {
   return sparkleCache.get(id);
 }
 
-function drawSparkles(cx, cy, scale, pal, t, id) {
+function drawSparkles(targetCtx, cx, cy, scale, pal, t, id) {
   const sps = getSparkles(id);
   for (const sp of sps) {
     const fl = 0.2+0.8*Math.abs(Math.sin(t*sp.sp+sp.ph));
     const sx = cx+sp.ox*scale, sy = cy+sp.oy*scale, r = sp.sz*fl;
-    // draw a 4-point star
-    ctx.save();
-    ctx.translate(sx, sy);
-    ctx.rotate(t*1.5+sp.ph);
-    ctx.fillStyle = `hsla(50,90%,85%,${fl*0.7})`;
-    ctx.beginPath();
+    targetCtx.save();
+    targetCtx.translate(sx, sy);
+    targetCtx.rotate(t*1.5+sp.ph);
+    targetCtx.fillStyle = `hsla(50,90%,85%,${fl*0.7})`;
+    targetCtx.beginPath();
     for (let i=0;i<4;i++){
       const a=(i/4)*6.28;
-      ctx.lineTo(Math.cos(a)*r*2.5, Math.sin(a)*r*2.5);
-      ctx.lineTo(Math.cos(a+0.785)*r*0.5, Math.sin(a+0.785)*r*0.5);
+      targetCtx.lineTo(Math.cos(a)*r*2.5, Math.sin(a)*r*2.5);
+      targetCtx.lineTo(Math.cos(a+0.785)*r*0.5, Math.sin(a+0.785)*r*0.5);
     }
-    ctx.closePath(); ctx.fill();
-    ctx.restore();
+    targetCtx.closePath(); targetCtx.fill();
+    targetCtx.restore();
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// POSE STATE
+// POSE + SEGMENTATION STATE
 // ═══════════════════════════════════════════════════════════════════
 let poses = [];
+let segmentationMask = null; // Float32Array from PoseLandmarker
+let maskWidth = 0, maskHeight = 0;
 const prevPositions = new Map();
 
 // ═══════════════════════════════════════════════════════════════════
+// PERSON CUTOUT — uses segmentation mask to extract people from webcam
+// ═══════════════════════════════════════════════════════════════════
+function drawPersonCutout(W, H) {
+  if (!segmentationMask || video.readyState < 2) return;
+
+  const vw = video.videoWidth, vh = video.videoHeight;
+
+  // Fit video to canvas dimensions (same math as before)
+  const va = vw/vh, ca = W/H;
+  let dw, dh, dx, dy;
+  if (ca > va) { dw = W; dh = W/va; dx = 0; dy = (H-dh)/2; }
+  else { dh = H; dw = H*va; dx = (W-dw)/2; dy = 0; }
+
+  // 1) Draw the segmentation mask as alpha onto maskCanvas
+  maskCanvas.width = maskWidth;
+  maskCanvas.height = maskHeight;
+  const maskImgData = maskCtx.createImageData(maskWidth, maskHeight);
+  for (let i = 0; i < segmentationMask.length; i++) {
+    const confidence = segmentationMask[i];
+    // Mask value is confidence that pixel belongs to a person (0-1)
+    const alpha = Math.min(255, Math.max(0, confidence * 255));
+    maskImgData.data[i * 4]     = 255; // R
+    maskImgData.data[i * 4 + 1] = 255; // G
+    maskImgData.data[i * 4 + 2] = 255; // B
+    maskImgData.data[i * 4 + 3] = alpha; // A — person confidence
+  }
+  maskCtx.putImageData(maskImgData, 0, 0);
+
+  // 2) On personCanvas: draw webcam, then use mask to cut out only people
+  personCanvas.width = W;
+  personCanvas.height = H;
+  personCtx.clearRect(0, 0, W, H);
+
+  // Draw the mask scaled to canvas size (mirrored)
+  personCtx.save();
+  personCtx.translate(W, 0);
+  personCtx.scale(-1, 1);
+  personCtx.drawImage(maskCanvas, dx, dy, dw, dh);
+  personCtx.restore();
+
+  // 'source-in': only keep webcam pixels where mask alpha > 0
+  personCtx.globalCompositeOperation = 'source-in';
+  personCtx.save();
+  personCtx.translate(W, 0);
+  personCtx.scale(-1, 1);
+  personCtx.drawImage(video, dx, dy, dw, dh);
+  personCtx.restore();
+  personCtx.globalCompositeOperation = 'source-over';
+
+  // 3) Draw the cutout person onto the main canvas
+  ctx.drawImage(personCanvas, 0, 0);
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // RENDER LOOP
+// Layering order: Forest → Wings → Person cutout → Sparkles
 // ═══════════════════════════════════════════════════════════════════
 function render(ts) {
   const t = ts / 1000;
   const W = canvas.width, H = canvas.height;
 
-  // 1) Forest background
+  // ── Layer 1: Forest background ──
   drawForest(t);
 
-  // 2) Webcam feed blended on top (mirrored for natural mirror)
-  if (video.readyState >= 2) {
-    ctx.save();
-    ctx.globalAlpha = 0.5;
-    ctx.globalCompositeOperation = 'screen';
-    ctx.translate(W, 0);
-    ctx.scale(-1, 1);
-    const vw=video.videoWidth, vh=video.videoHeight;
-    const va=vw/vh, ca=W/H;
-    let dw,dh,dx,dy;
-    if(ca>va){dw=W;dh=W/va;dx=0;dy=(H-dh)/2;}
-    else{dh=H;dw=H*va;dx=(W-dw)/2;dy=0;}
-    ctx.drawImage(video, dx, dy, dw, dh);
-    ctx.restore();
-  }
-
-  // 3) Overlay wings on each detected person
+  // ── Layer 2: Butterfly wings (behind people) ──
   for (let i = 0; i < poses.length; i++) {
     const lm = poses[i];
-    // PoseLandmarker indices: 11=left shoulder, 12=right shoulder
-    const ls = lm[11], rs = lm[12];
+    const ls = lm[11], rs = lm[12]; // shoulders
     if (!ls || !rs || ls.visibility < 0.4 || rs.visibility < 0.4) continue;
 
     const pal = wingPalettes[i % wingPalettes.length];
-
-    // Convert normalised coords → canvas (mirrored X)
     const lx = (1-ls.x)*W, ly = ls.y*H;
     const rx = (1-rs.x)*W, ry = rs.y*H;
     const cx = (lx+rx)/2, cy = (ly+ry)/2;
@@ -357,58 +406,63 @@ function render(ts) {
     const flapSpeed = 2.5 + Math.min(motion*0.06, 5);
     const flapAngle = Math.sin(t*flapSpeed + i*1.1) * 0.65;
 
-    // Glow
+    // Wing glow
     const gg = ctx.createRadialGradient(cx,cy,wScale*0.15,cx,cy,wScale*1.6);
     gg.addColorStop(0, pal.glow); gg.addColorStop(1,'rgba(0,0,0,0)');
     ctx.fillStyle=gg; ctx.beginPath(); ctx.arc(cx,cy,wScale*1.6,0,6.28); ctx.fill();
 
-    // Wings anchored to each shoulder
-    drawWing(rx, ry, wScale, flapAngle, pal, 1, t);
-    drawWing(lx, ly, wScale, -flapAngle, pal, -1, t);
+    // Wings anchored to shoulders
+    drawWing(ctx, rx, ry, wScale, flapAngle, pal, 1, t);
+    drawWing(ctx, lx, ly, wScale, -flapAngle, pal, -1, t);
+  }
 
-    // Sparkles
-    drawSparkles(cx, cy, wScale, pal, t, i);
+  // ── Layer 3: Person cutout (in front of wings, no real background) ──
+  drawPersonCutout(W, H);
+
+  // ── Layer 4: Sparkles (in front of everything) ──
+  for (let i = 0; i < poses.length; i++) {
+    const lm = poses[i];
+    const ls = lm[11], rs = lm[12];
+    if (!ls || !rs || ls.visibility < 0.4 || rs.visibility < 0.4) continue;
+    const pal = wingPalettes[i % wingPalettes.length];
+    const lx = (1-ls.x)*W, ly = ls.y*H;
+    const rx = (1-rs.x)*W, ry = rs.y*H;
+    const cx = (lx+rx)/2, cy = (ly+ry)/2;
+    const sDist = Math.hypot(rx-lx, ry-ly);
+    const wScale = sDist * 1.15;
+    drawSparkles(ctx, cx, cy, wScale, pal, t, i);
   }
 
   requestAnimationFrame(render);
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// INIT — MediaPipe Tasks Vision PoseLandmarker (multi-pose)
+// INIT — MediaPipe Tasks Vision PoseLandmarker (multi-pose + segmentation)
 // ═══════════════════════════════════════════════════════════════════
 async function init() {
+  const CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18';
+  const MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+
   let poseLandmarker;
-  try {
-    const filesetResolver = await FilesetResolver.forVisionTasks(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
-    );
-    poseLandmarker = await PoseLandmarker.createFromOptions(filesetResolver, {
-      baseOptions: {
-        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-        delegate: 'GPU',
-      },
-      runningMode: 'VIDEO',
-      numPoses: 8,
-      minPoseDetectionConfidence: 0.5,
-      minPosePresenceConfidence: 0.5,
-      minTrackingConfidence: 0.4,
-    });
-  } catch(e) {
-    console.warn('GPU delegate failed, falling back to CPU', e);
-    const filesetResolver = await FilesetResolver.forVisionTasks(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
-    );
-    poseLandmarker = await PoseLandmarker.createFromOptions(filesetResolver, {
-      baseOptions: {
-        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-        delegate: 'CPU',
-      },
-      runningMode: 'VIDEO',
-      numPoses: 8,
-      minPoseDetectionConfidence: 0.5,
-      minPosePresenceConfidence: 0.5,
-      minTrackingConfidence: 0.4,
-    });
+  // Try GPU first, fall back to CPU (known issue: GPU + segmentation can be blank)
+  for (const delegate of ['GPU', 'CPU']) {
+    try {
+      const filesetResolver = await FilesetResolver.forVisionTasks(`${CDN}/wasm`);
+      poseLandmarker = await PoseLandmarker.createFromOptions(filesetResolver, {
+        baseOptions: { modelAssetPath: MODEL, delegate },
+        runningMode: 'VIDEO',
+        numPoses: 8,
+        minPoseDetectionConfidence: 0.5,
+        minPosePresenceConfidence: 0.5,
+        minTrackingConfidence: 0.4,
+        outputSegmentationMasks: true,
+      });
+      console.log(`PoseLandmarker created with ${delegate} delegate`);
+      break;
+    } catch(e) {
+      console.warn(`${delegate} delegate failed:`, e);
+      if (delegate === 'CPU') throw e; // both failed
+    }
   }
 
   // Start webcam
@@ -430,14 +484,28 @@ async function init() {
   loadingEl.style.display = 'none';
   requestAnimationFrame(render);
 
-  // Detection loop — runs at ~30fps independent of render
+  // Detection loop
   let lastVideoTime = -1;
   function detect() {
     if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
       lastVideoTime = video.currentTime;
       const result = poseLandmarker.detectForVideo(video, performance.now());
-      if (result && result.landmarks) {
-        poses = result.landmarks;
+      if (result) {
+        if (result.landmarks) {
+          poses = result.landmarks;
+        }
+        // Get segmentation mask as Float32Array
+        if (result.segmentationMasks && result.segmentationMasks.length > 0) {
+          const mask = result.segmentationMasks[0];
+          // getAsFloat32Array returns per-pixel confidence values (0-1)
+          try {
+            segmentationMask = mask.getAsFloat32Array();
+            maskWidth = mask.width;
+            maskHeight = mask.height;
+          } catch(e) {
+            // Some versions/delegates may not support this; fall back gracefully
+          }
+        }
       }
     }
     requestAnimationFrame(detect);
