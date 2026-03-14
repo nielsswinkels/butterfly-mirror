@@ -125,14 +125,24 @@ const wingPalettes = [
 // ═══════════════════════════════════════════════════════════════════
 // MAGICAL FOREST BACKGROUND (entirely code-drawn)
 // ═══════════════════════════════════════════════════════════════════
-const trees = [], bgParticles = [], orbs = [];
+const trees = [], bgParticles = [], orbs = [], mushrooms = [];
 
 (function initForest() {
-  for (let i = 0; i < 14; i++) trees.push({
-    x: Math.random(), h: 0.35 + Math.random()*0.55,
-    tw: 0.015 + Math.random()*0.025, cr: 0.05 + Math.random()*0.09,
-    hue: 90 + Math.random()*80, gp: Math.random()*6.28, gs: 0.3+Math.random()*0.5
+  // Background trees (further away, smaller)
+  for (let i = 0; i < 8; i++) trees.push({
+    x: i/8 + (Math.random()-0.5)*0.1, h: 0.25 + Math.random()*0.25,
+    tw: 0.008 + Math.random()*0.012, layer: 0,
+    hue: 100 + Math.random()*60, gp: Math.random()*6.28, gs: 0.3+Math.random()*0.4
   });
+  // Foreground trees (closer, bigger, spread across width)
+  for (let i = 0; i < 10; i++) trees.push({
+    x: i/10 + (Math.random()-0.5)*0.08, h: 0.4 + Math.random()*0.45,
+    tw: 0.015 + Math.random()*0.025, layer: 1,
+    hue: 80 + Math.random()*80, gp: Math.random()*6.28, gs: 0.2+Math.random()*0.5
+  });
+  // Sort so back-layer draws first
+  trees.sort((a,b) => a.layer - b.layer);
+
   for (let i = 0; i < 70; i++) bgParticles.push({
     x:Math.random(), y:Math.random(), sz:1+Math.random()*3,
     sp:0.0002+Math.random()*0.0006, dr:Math.random()*6.28,
@@ -143,38 +153,182 @@ const trees = [], bgParticles = [], orbs = [];
     dx:(Math.random()-0.5)*0.0004, dy:(Math.random()-0.5)*0.0003,
     hue:Math.random()*360, ph:Math.random()*6.28
   });
+  // Glowing mushrooms on the ground
+  for (let i = 0; i < 12; i++) mushrooms.push({
+    x: Math.random(), y: 0.88 + Math.random()*0.1,
+    sz: 0.01 + Math.random()*0.015,
+    hue: Math.random() < 0.5 ? 280+Math.random()*40 : 160+Math.random()*40,
+    ph: Math.random()*6.28
+  });
 })();
+
+function drawTree(tx, bY, tH, tw, hue, gi, W, H) {
+  // ── Trunk with bark texture ──
+  const trunkGrad = ctx.createLinearGradient(tx-tw, bY, tx+tw, bY);
+  trunkGrad.addColorStop(0, '#1e0e06');
+  trunkGrad.addColorStop(0.3, '#3d2010');
+  trunkGrad.addColorStop(0.7, '#4a2814');
+  trunkGrad.addColorStop(1, '#1e0e06');
+  ctx.fillStyle = trunkGrad;
+  ctx.beginPath();
+  // Slightly curved trunk using bezier
+  ctx.moveTo(tx - tw, bY);
+  ctx.quadraticCurveTo(tx - tw*1.2, bY - tH*0.5, tx - tw*0.5, bY - tH);
+  ctx.lineTo(tx + tw*0.5, bY - tH);
+  ctx.quadraticCurveTo(tx + tw*1.2, bY - tH*0.5, tx + tw, bY);
+  ctx.fill();
+
+  // ── Branches ──
+  const branchCount = 2 + Math.floor(tH / H * 4);
+  ctx.strokeStyle = '#3a2010';
+  ctx.lineCap = 'round';
+  for (let b = 0; b < branchCount; b++) {
+    const by = bY - tH * (0.4 + b * 0.15);
+    const side = b % 2 === 0 ? 1 : -1;
+    const bLen = tw * (3 + Math.random() * 4);
+    ctx.lineWidth = tw * 0.3 * (1 - b*0.15);
+    ctx.beginPath();
+    ctx.moveTo(tx, by);
+    ctx.quadraticCurveTo(tx + side*bLen*0.5, by - tH*0.05, tx + side*bLen, by - tH*0.08);
+    ctx.stroke();
+  }
+
+  // ── Canopy: multiple overlapping leaf clusters ──
+  const canopyTop = bY - tH;
+  const canopyW = tw * 12;
+  const canopyH = tH * 0.55;
+
+  // Main canopy mass — several overlapping ellipses
+  const clusters = [
+    { dx: 0, dy: 0, rx: canopyW*0.5, ry: canopyH*0.45 },
+    { dx: -canopyW*0.25, dy: canopyH*0.05, rx: canopyW*0.38, ry: canopyH*0.38 },
+    { dx: canopyW*0.25, dy: canopyH*0.05, rx: canopyW*0.38, ry: canopyH*0.38 },
+    { dx: -canopyW*0.1, dy: -canopyH*0.2, rx: canopyW*0.3, ry: canopyH*0.3 },
+    { dx: canopyW*0.1, dy: -canopyH*0.2, rx: canopyW*0.3, ry: canopyH*0.3 },
+    { dx: 0, dy: canopyH*0.15, rx: canopyW*0.45, ry: canopyH*0.3 },
+  ];
+
+  for (const cl of clusters) {
+    const cx = tx + cl.dx, cy = canopyTop + cl.dy;
+    // Dark base layer
+    const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(cl.rx, cl.ry));
+    cg.addColorStop(0, `hsla(${hue}, 50%, 22%, ${gi+0.4})`);
+    cg.addColorStop(0.5, `hsla(${hue+10}, 45%, 16%, ${gi+0.25})`);
+    cg.addColorStop(1, `hsla(${hue}, 40%, 10%, 0)`);
+    ctx.fillStyle = cg;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, cl.rx, cl.ry, 0, 0, 6.28);
+    ctx.fill();
+  }
+
+  // Brighter glow layer on top for magical feel
+  const glowGrad = ctx.createRadialGradient(tx, canopyTop, 0, tx, canopyTop, canopyW*0.5);
+  glowGrad.addColorStop(0, `hsla(${hue+20}, 70%, 55%, ${gi*0.5})`);
+  glowGrad.addColorStop(0.4, `hsla(${hue+10}, 60%, 40%, ${gi*0.3})`);
+  glowGrad.addColorStop(1, `hsla(${hue}, 50%, 25%, 0)`);
+  ctx.fillStyle = glowGrad;
+  ctx.beginPath();
+  ctx.ellipse(tx, canopyTop, canopyW*0.5, canopyH*0.45, 0, 0, 6.28);
+  ctx.fill();
+
+  // Leaf edge highlights — small bright spots around canopy perimeter
+  for (let l = 0; l < 14; l++) {
+    const angle = (l / 14) * 6.28 + gi * 0.5;
+    const lr = canopyW * 0.4 + Math.sin(angle*3)*canopyW*0.08;
+    const lx = tx + Math.cos(angle) * lr;
+    const ly = canopyTop + Math.sin(angle) * canopyH * 0.35;
+    const leafR = canopyW * 0.08 + Math.sin(angle*5+gi)*canopyW*0.03;
+    ctx.fillStyle = `hsla(${hue + Math.sin(angle)*20}, 55%, 35%, ${0.3+gi*0.2})`;
+    ctx.beginPath();
+    ctx.arc(lx, ly, leafR, 0, 6.28);
+    ctx.fill();
+  }
+}
 
 function drawForest(t) {
   const W = canvas.width, H = canvas.height;
 
-  // sky
+  // sky gradient — deep night forest
   const sky = ctx.createLinearGradient(0,0,0,H);
-  sky.addColorStop(0,'#060318'); sky.addColorStop(0.25,'#140830');
-  sky.addColorStop(0.55,'#0b2015'); sky.addColorStop(1,'#06140a');
+  sky.addColorStop(0,'#040214');
+  sky.addColorStop(0.2,'#0e0628');
+  sky.addColorStop(0.45,'#091a10');
+  sky.addColorStop(0.7,'#071408');
+  sky.addColorStop(1,'#050e05');
   ctx.fillStyle = sky; ctx.fillRect(0,0,W,H);
 
-  // ground mist
-  const gnd = ctx.createLinearGradient(0,H*0.8,0,H);
-  gnd.addColorStop(0,'rgba(20,60,30,0)'); gnd.addColorStop(1,'rgba(8,30,14,0.7)');
-  ctx.fillStyle = gnd; ctx.fillRect(0,H*0.8,W,H*0.2);
-
-  // trees
-  for (const tr of trees) {
-    const tx = tr.x*W, bY = H, tH = tr.h*H, tw = tr.tw*W;
-    ctx.fillStyle = '#3a2010';
-    ctx.beginPath(); ctx.moveTo(tx-tw,bY); ctx.lineTo(tx-tw*0.6,bY-tH);
-    ctx.lineTo(tx+tw*0.6,bY-tH); ctx.lineTo(tx+tw,bY); ctx.fill();
-    const gi = 0.25+0.2*Math.sin(t*tr.gs+tr.gp);
-    const cr = tr.cr*W, cy = bY-tH;
-    const cg = ctx.createRadialGradient(tx,cy,cr*0.05,tx,cy,cr);
-    cg.addColorStop(0,`hsla(${tr.hue},65%,50%,${gi+0.15})`);
-    cg.addColorStop(0.6,`hsla(${tr.hue},55%,30%,${gi*0.6})`);
-    cg.addColorStop(1,`hsla(${tr.hue},40%,20%,0)`);
-    ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(tx,cy,cr,0,6.28); ctx.fill();
+  // Stars in the sky
+  for (let i = 0; i < 30; i++) {
+    const sx = (Math.sin(i*127.1) * 0.5 + 0.5) * W;
+    const sy = (Math.sin(i*311.7) * 0.5 + 0.5) * H * 0.3;
+    const fl = 0.3 + 0.7 * Math.abs(Math.sin(t*0.8 + i*2.3));
+    ctx.fillStyle = `rgba(200,220,255,${fl*0.6})`;
+    ctx.beginPath(); ctx.arc(sx, sy, 1+fl, 0, 6.28); ctx.fill();
   }
 
-  // floating particles
+  // Ground — mossy forest floor
+  const gnd = ctx.createLinearGradient(0, H*0.78, 0, H);
+  gnd.addColorStop(0, 'rgba(10,30,12,0)');
+  gnd.addColorStop(0.3, 'rgba(15,45,18,0.5)');
+  gnd.addColorStop(0.6, 'rgba(12,35,15,0.8)');
+  gnd.addColorStop(1, 'rgba(6,20,8,1)');
+  ctx.fillStyle = gnd;
+  ctx.fillRect(0, H*0.78, W, H*0.22);
+
+  // Undergrowth — ferns/grass silhouettes along ground line
+  ctx.fillStyle = 'rgba(15,50,20,0.6)';
+  for (let i = 0; i < 40; i++) {
+    const fx = (i/40) * W + Math.sin(i*7.7)*20;
+    const fh = 15 + Math.sin(i*3.3)*10 + Math.sin(t*0.5+i)*3;
+    const fy = H*0.82 + Math.sin(i*5.1)*8;
+    // Simple fern triangle
+    ctx.beginPath();
+    ctx.moveTo(fx - 8, fy);
+    ctx.lineTo(fx, fy - fh);
+    ctx.lineTo(fx + 8, fy);
+    ctx.fill();
+  }
+
+  // Draw trees
+  for (const tr of trees) {
+    const tx = tr.x * W, bY = H * 0.85, tH = tr.h * H, tw = tr.tw * W;
+    const gi = 0.3 + 0.2 * Math.sin(t*tr.gs + tr.gp);
+    drawTree(tx, bY, tH, tw, tr.hue, gi, W, H);
+  }
+
+  // Glowing mushrooms
+  for (const m of mushrooms) {
+    const mx = m.x*W, my = m.y*H, ms = m.sz*W;
+    const gl = 0.5 + 0.3*Math.sin(t*1.5 + m.ph);
+    // Stem
+    ctx.fillStyle = `hsla(${m.hue},20%,60%,${gl*0.6})`;
+    ctx.fillRect(mx - ms*0.15, my, ms*0.3, ms*1.2);
+    // Cap
+    ctx.beginPath();
+    ctx.ellipse(mx, my, ms*0.7, ms*0.4, 0, Math.PI, 0);
+    ctx.fillStyle = `hsla(${m.hue},60%,50%,${gl*0.8})`;
+    ctx.fill();
+    // Cap glow
+    const mg = ctx.createRadialGradient(mx, my-ms*0.2, 0, mx, my-ms*0.2, ms*1.5);
+    mg.addColorStop(0, `hsla(${m.hue},70%,65%,${gl*0.25})`);
+    mg.addColorStop(1, 'hsla(0,0%,0%,0)');
+    ctx.fillStyle = mg;
+    ctx.beginPath(); ctx.arc(mx, my-ms*0.2, ms*1.5, 0, 6.28); ctx.fill();
+  }
+
+  // Ground mist — wispy fog near the bottom
+  for (let i = 0; i < 6; i++) {
+    const mx = (i/6)*W + Math.sin(t*0.2 + i*2.1)*W*0.05;
+    const my = H*0.82 + Math.sin(i*1.7)*H*0.03;
+    const mr = W*0.1 + Math.sin(t*0.3+i)*W*0.02;
+    const mist = ctx.createRadialGradient(mx, my, 0, mx, my, mr);
+    mist.addColorStop(0, `rgba(100,180,120,${0.06+0.03*Math.sin(t*0.5+i)})`);
+    mist.addColorStop(1, 'rgba(50,100,60,0)');
+    ctx.fillStyle = mist;
+    ctx.beginPath(); ctx.arc(mx, my, mr, 0, 6.28); ctx.fill();
+  }
+
+  // Floating particles
   for (const p of bgParticles) {
     p.x += Math.sin(t*0.5+p.dr)*0.0003;
     p.y -= p.sp; if (p.y<-0.05){p.y=1.05;p.x=Math.random();}
@@ -183,7 +337,7 @@ function drawForest(t) {
     ctx.beginPath(); ctx.arc(p.x*W,p.y*H,p.sz*fl,0,6.28); ctx.fill();
   }
 
-  // glowing orbs
+  // Glowing orbs
   for (const o of orbs) {
     o.x+=o.dx; o.y+=o.dy;
     if(o.x<0||o.x>1)o.dx*=-1; if(o.y<0.15||o.y>0.95)o.dy*=-1;
@@ -318,6 +472,37 @@ let poses = [];
 let segmentationMask = null; // Float32Array from PoseLandmarker
 let maskWidth = 0, maskHeight = 0;
 const prevPositions = new Map();
+
+// ═══════════════════════════════════════════════════════════════════
+// LANDMARK SMOOTHING — exponential moving average to reduce jitter
+// ═══════════════════════════════════════════════════════════════════
+const SMOOTH = 0.35; // 0 = no smoothing, 1 = frozen. 0.35 = gentle smoothing
+const smoothedPoses = [];
+
+function smoothLandmarks(rawPoses) {
+  // Grow/shrink smoothed array to match
+  while (smoothedPoses.length < rawPoses.length) {
+    smoothedPoses.push(null);
+  }
+  smoothedPoses.length = rawPoses.length;
+
+  for (let i = 0; i < rawPoses.length; i++) {
+    const raw = rawPoses[i];
+    if (!smoothedPoses[i]) {
+      // First frame for this pose — copy directly
+      smoothedPoses[i] = raw.map(lm => ({ ...lm }));
+      continue;
+    }
+    const prev = smoothedPoses[i];
+    for (let j = 0; j < raw.length && j < prev.length; j++) {
+      prev[j].x = prev[j].x * SMOOTH + raw[j].x * (1 - SMOOTH);
+      prev[j].y = prev[j].y * SMOOTH + raw[j].y * (1 - SMOOTH);
+      prev[j].z = prev[j].z * SMOOTH + raw[j].z * (1 - SMOOTH);
+      prev[j].visibility = raw[j].visibility; // don't smooth visibility
+    }
+  }
+  return smoothedPoses;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // PERSON CUTOUT — uses segmentation mask to extract people from webcam
@@ -492,7 +677,7 @@ async function init() {
       const result = poseLandmarker.detectForVideo(video, performance.now());
       if (result) {
         if (result.landmarks) {
-          poses = result.landmarks;
+          poses = smoothLandmarks(result.landmarks);
         }
         // Get segmentation mask as Float32Array
         if (result.segmentationMasks && result.segmentationMasks.length > 0) {
