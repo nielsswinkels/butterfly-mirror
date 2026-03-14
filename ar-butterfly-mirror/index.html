@@ -34,24 +34,6 @@
     transition: background 0.3s;
   }
   #fullscreenBtn:hover { background: rgba(140, 70, 200, 0.9); cursor: pointer; }
-  #title {
-    position: fixed;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 100;
-    color: #fff;
-    font-size: clamp(20px, 4vw, 42px);
-    font-weight: bold;
-    text-shadow: 0 0 20px rgba(180,100,255,0.8), 0 0 40px rgba(100,200,255,0.5);
-    pointer-events: none;
-    white-space: nowrap;
-    animation: titleGlow 3s ease-in-out infinite alternate;
-  }
-  @keyframes titleGlow {
-    from { text-shadow: 0 0 20px rgba(180,100,255,0.8), 0 0 40px rgba(100,200,255,0.5); }
-    to   { text-shadow: 0 0 30px rgba(220,140,255,1), 0 0 60px rgba(140,220,255,0.8), 0 0 80px rgba(255,180,255,0.4); }
-  }
   #loading {
     position: fixed; inset: 0;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -75,7 +57,7 @@
   <div>Laddar Fjärilsskogen...</div>
 </div>
 
-<div id="title">&#x1F98B; Välkommen till Fjärilsskogen! &#x1F98B;</div>
+
 <button id="fullscreenBtn" onclick="document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()">&#x26F6; Fullskärm</button>
 
 <canvas id="mainCanvas"></canvas>
