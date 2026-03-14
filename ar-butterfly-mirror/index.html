@@ -81,8 +81,9 @@
 <video id="webcam" playsinline autoplay muted></video>
 
 <script type="module">
-import vision from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs';
-const { PoseLandmarker, FilesetResolver } = vision;
+const { PoseLandmarker, FilesetResolver } = await import(
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs'
+);
 
 const canvas = document.getElementById('mainCanvas');
 const ctx = canvas.getContext('2d');
