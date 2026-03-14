@@ -424,9 +424,9 @@ function drawWing(targetCtx, cx, cy, scale, flapAngle, pal, side, t) {
   targetCtx.beginPath(); targetCtx.moveTo(0,0); targetCtx.quadraticCurveTo(s*0.3,s*0.4,s*0.65,s*0.7); targetCtx.stroke();
   targetCtx.beginPath(); targetCtx.moveTo(0,0); targetCtx.quadraticCurveTo(s*0.5,s*0.3,s*0.85,s*0.5); targetCtx.stroke();
 
-  // scalloped edge dots
+  // scalloped edge dots (inside lower wing)
   for(let i=0;i<5;i++){
-    const a=(i/5)*1.8+0.4, dx=s*0.5+Math.cos(a)*s*0.38, dy=s*0.55+Math.sin(a)*s*0.38;
+    const a=(i/5)*1.4+0.3, dx=s*0.45+Math.cos(a)*s*0.22, dy=s*0.38+Math.sin(a)*s*0.2;
     targetCtx.fillStyle=pal.acc; targetCtx.globalAlpha=0.35;
     targetCtx.beginPath(); targetCtx.arc(dx,dy,s*0.04,0,6.28); targetCtx.fill();
   }
