@@ -187,23 +187,28 @@ function drawTree(tx, bY, tH, tw, hue, gi, W, H, branches) {
   trunkGrad.addColorStop(1, '#1e0e06');
   ctx.fillStyle = trunkGrad;
   ctx.beginPath();
-  // Slightly curved trunk with flared root base
-  const rootW = tw * 2.5; // roots spread wider than trunk
+  // Slightly curved trunk with gentle root flare at base
+  const rootW = tw * 1.6;
   ctx.moveTo(tx - rootW, bY);
-  ctx.quadraticCurveTo(tx - tw*1.5, bY - tH*0.08, tx - tw, bY - tH*0.12);
+  ctx.quadraticCurveTo(tx - tw*1.1, bY - tH*0.03, tx - tw, bY - tH*0.05);
   ctx.quadraticCurveTo(tx - tw*1.2, bY - tH*0.5, tx - tw*0.5, bY - tH);
   ctx.lineTo(tx + tw*0.5, bY - tH);
-  ctx.quadraticCurveTo(tx + tw*1.2, bY - tH*0.5, tx + tw, bY - tH*0.12);
-  ctx.quadraticCurveTo(tx + tw*1.5, bY - tH*0.08, tx + rootW, bY);
+  ctx.quadraticCurveTo(tx + tw*1.2, bY - tH*0.5, tx + tw, bY - tH*0.05);
+  ctx.quadraticCurveTo(tx + tw*1.1, bY - tH*0.03, tx + rootW, bY);
   ctx.fill();
 
-  // Soft moss/shadow at trunk base to blend into ground
-  const baseGrad = ctx.createRadialGradient(tx, bY, tw*0.5, tx, bY, rootW*1.8);
-  baseGrad.addColorStop(0, 'rgba(15,40,15,0.6)');
-  baseGrad.addColorStop(0.5, 'rgba(12,35,12,0.3)');
-  baseGrad.addColorStop(1, 'rgba(10,30,10,0)');
-  ctx.fillStyle = baseGrad;
-  ctx.beginPath(); ctx.arc(tx, bY, rootW*1.8, 0, 6.28); ctx.fill();
+  // Moss mound at trunk base
+  const mossW = rootW * 2;
+  const mossH = tH * 0.03 + 4;
+  ctx.fillStyle = `hsla(${hue-10}, 40%, 18%, 0.7)`;
+  ctx.beginPath();
+  ctx.ellipse(tx, bY, mossW, mossH, 0, Math.PI, 0);
+  ctx.fill();
+  // Brighter moss highlight
+  ctx.fillStyle = `hsla(${hue}, 45%, 25%, 0.5)`;
+  ctx.beginPath();
+  ctx.ellipse(tx, bY + 1, mossW * 0.7, mossH * 0.6, 0, Math.PI, 0);
+  ctx.fill();
 
   // ── Branches (pre-computed, stable) ──
   ctx.strokeStyle = '#3a2010';
@@ -584,8 +589,66 @@ function drawPersonCutout(W, H) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// RAINBOW EFFECT — triggered when both arms are raised
+// ═══════════════════════════════════════════════════════════════════
+const rainbowAlpha = new Map();
+const rainbowColors = [
+  'rgba(255,0,0,',    // red
+  'rgba(255,127,0,',  // orange
+  'rgba(255,255,0,',  // yellow
+  'rgba(0,200,0,',    // green
+  'rgba(0,150,255,',  // blue
+  'rgba(75,0,130,',   // indigo
+  'rgba(148,0,211,',  // violet
+];
+
+function drawRainbow(x1, y1, x2, y2, alpha, t) {
+  const cx = (x1 + x2) / 2;
+  const cy = Math.min(y1, y2);
+  const span = Math.abs(x2 - x1);
+  const arcHeight = span * 0.5;
+  const bandWidth = span * 0.018 + 3;
+
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.75;
+  ctx.lineCap = 'round';
+
+  for (let b = 0; b < rainbowColors.length; b++) {
+    const radius = span * 0.4 + b * bandWidth;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, Math.PI, 0);
+    ctx.strokeStyle = rainbowColors[b] + (0.8 - b * 0.05) + ')';
+    ctx.lineWidth = bandWidth + 1;
+    ctx.stroke();
+  }
+
+  // Soft glow behind the rainbow
+  const glowGrad = ctx.createRadialGradient(cx, cy, span*0.15, cx, cy, span*0.6);
+  glowGrad.addColorStop(0, `rgba(255,255,200,${alpha*0.15})`);
+  glowGrad.addColorStop(0.5, `rgba(255,200,255,${alpha*0.08})`);
+  glowGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glowGrad;
+  ctx.beginPath(); ctx.arc(cx, cy, span*0.6, 0, 6.28); ctx.fill();
+
+  // Sparkles along the rainbow arc
+  for (let s = 0; s < 12; s++) {
+    const angle = Math.PI + (s / 12) * Math.PI * -1;
+    const r = span * 0.4 + Math.sin(t * 3 + s * 1.7) * bandWidth * 3;
+    const sx = cx + Math.cos(angle) * r;
+    const sy = cy + Math.sin(angle) * r;
+    const fl = 0.4 + 0.6 * Math.abs(Math.sin(t * 4 + s * 2.1));
+    ctx.fillStyle = `rgba(255,255,255,${fl * alpha * 0.7})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 2 + fl * 2, 0, 6.28);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // RENDER LOOP
-// Layering order: Forest → Wings → Person cutout → Sparkles
+// Layering order: Forest → Wings → Person cutout → Sparkles → Rainbow
 // ═══════════════════════════════════════════════════════════════════
 function render(ts) {
   const t = ts / 1000;
@@ -641,6 +704,43 @@ function render(ts) {
     const sDist = Math.hypot(rx-lx, ry-ly);
     const wScale = sDist * 1.15;
     drawSparkles(ctx, cx, cy, wScale, pal, t, i);
+  }
+
+  // ── Layer 5: Rainbow when both arms are raised ──
+  for (let i = 0; i < poses.length; i++) {
+    const lm = poses[i];
+    // Landmarks: 11/12 = shoulders, 15/16 = wrists
+    const ls = lm[11], rs = lm[12], lw = lm[15], rw = lm[16];
+    if (!ls || !rs || !lw || !rw) continue;
+    if (lw.visibility < 0.4 || rw.visibility < 0.4) continue;
+
+    // Both wrists must be above their respective shoulders
+    if (lw.y < ls.y && rw.y < rs.y) {
+      const lwx = (1-lw.x)*W, lwy = lw.y*H;
+      const rwx = (1-rw.x)*W, rwy = rw.y*H;
+
+      // Smooth the rainbow activation
+      const key = `rainbow_${i}`;
+      const prevAlpha = rainbowAlpha.get(key) || 0;
+      const targetAlpha = 1;
+      const alpha = prevAlpha + (targetAlpha - prevAlpha) * 0.1;
+      rainbowAlpha.set(key, alpha);
+
+      if (alpha > 0.05) {
+        drawRainbow(lwx, lwy, rwx, rwy, alpha, t);
+      }
+    } else {
+      // Fade out
+      const key = `rainbow_${i}`;
+      const prevAlpha = rainbowAlpha.get(key) || 0;
+      const alpha = prevAlpha * 0.9;
+      rainbowAlpha.set(key, alpha);
+      if (alpha > 0.05) {
+        const lwx = (1-lw.x)*W, lwy = lw.y*H;
+        const rwx = (1-rw.x)*W, rwy = rw.y*H;
+        drawRainbow(lwx, lwy, rwx, rwy, alpha, t);
+      }
+    }
   }
 
   requestAnimationFrame(render);
