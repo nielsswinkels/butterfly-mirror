@@ -837,7 +837,91 @@ function render(ts) {
 // ═══════════════════════════════════════════════════════════════════
 const forestButterflies = [];
 
-function addForestButterfly(palLeft, palRight) {
+// Build the wing bezier clip path (matches template.html exactly)
+function wingClipPath(ctx, cx, cy, s, dir) {
+  // Upper wing
+  ctx.moveTo(cx, cy - 18);
+  ctx.bezierCurveTo(
+    cx + dir*s*0.5, cy - 18 - s*0.9,
+    cx + dir*s*1.3, cy - 18 - s*1.1,
+    cx + dir*s*1.0, cy - 18 - s*0.35
+  );
+  ctx.bezierCurveTo(
+    cx + dir*s*1.35, cy - 18 - s*0.55,
+    cx + dir*s*1.45, cy - 18 - s*0.05,
+    cx + dir*s*0.85, cy - 18 + s*0.1
+  );
+  ctx.bezierCurveTo(
+    cx + dir*s*0.45, cy - 18 + s*0.08,
+    cx + dir*s*0.15, cy - 18 + 0.02,
+    cx, cy - 18
+  );
+  // Lower wing
+  ctx.moveTo(cx, cy + 6);
+  ctx.bezierCurveTo(
+    cx + dir*s*0.25, cy + 6 + s*0.15,
+    cx + dir*s*1.05, cy + 6 + s*0.25,
+    cx + dir*s*0.85, cy + 6 + s*0.65
+  );
+  ctx.bezierCurveTo(
+    cx + dir*s*0.95, cy + 6 + s*0.9,
+    cx + dir*s*0.5,  cy + 6 + s*1.0,
+    cx + dir*s*0.2,  cy + 6 + s*0.75
+  );
+  ctx.bezierCurveTo(
+    cx + dir*s*0.05, cy + 6 + s*0.45,
+    cx, cy + 6 + s*0.1,
+    cx, cy + 6
+  );
+}
+
+// Capture the actual drawing from the paper, masked to butterfly wing shape
+function captureButterflySpriteFromPaper(sourceCanvas, rect) {
+  const spriteW = 300;
+  const spriteH = Math.round(spriteW * (rect.h / rect.w));
+
+  // 1) Crop paper area into a temp canvas
+  const tmp = document.createElement('canvas');
+  tmp.width = spriteW;
+  tmp.height = spriteH;
+  const tCtx = tmp.getContext('2d');
+  tCtx.drawImage(sourceCanvas, rect.x, rect.y, rect.w, rect.h, 0, 0, spriteW, spriteH);
+
+  // 2) Create masked sprite — wing shapes only
+  const s = spriteW * 0.309; // wing scale matching template (210/680)
+  const cx = spriteW / 2;
+  const cy = spriteH * 0.46;
+
+  const masked = document.createElement('canvas');
+  masked.width = spriteW;
+  masked.height = spriteH;
+  const mCtx = masked.getContext('2d');
+
+  // Draw wing shapes as a filled region (this becomes our alpha mask)
+  mCtx.fillStyle = '#fff';
+  mCtx.beginPath();
+  wingClipPath(mCtx, cx, cy, s, 1);  // right wing
+  wingClipPath(mCtx, cx, cy, s, -1); // left wing
+  mCtx.fill();
+
+  // source-in: keep only the paper pixels inside the wing shapes
+  mCtx.globalCompositeOperation = 'source-in';
+  mCtx.drawImage(tmp, 0, 0);
+  mCtx.globalCompositeOperation = 'source-over';
+
+  // Also add a thin black outline for definition at small sizes
+  mCtx.strokeStyle = 'rgba(0,0,0,0.3)';
+  mCtx.lineWidth = 1.5;
+  mCtx.beginPath();
+  wingClipPath(mCtx, cx, cy, s, 1);
+  wingClipPath(mCtx, cx, cy, s, -1);
+  mCtx.stroke();
+
+  // Return sprite + metadata for drawing
+  return { canvas: masked, w: spriteW, h: spriteH, s, cx, cy };
+}
+
+function addForestButterfly(sprite, glowColor) {
   forestButterflies.push({
     x: Math.random(),
     y: 0.2 + Math.random() * 0.5,
@@ -852,8 +936,8 @@ function addForestButterfly(palLeft, palRight) {
     pathRadiusY: 0.04 + Math.random() * 0.06,
     baseX: 0.1 + Math.random() * 0.8,
     baseY: 0.15 + Math.random() * 0.55,
-    palLeft,
-    palRight,
+    sprite,       // { canvas, w, h, s, cx, cy }
+    glowColor,    // rgba string for the glow effect
   });
 }
 
@@ -873,19 +957,45 @@ function drawForestButterflies(t) {
 
     const fx = fb.x * W, fy = fb.y * H;
     const flapAngle = Math.sin(t * fb.flapSpeed + fb.phase) * 0.7;
+    const flapCos = Math.cos(flapAngle);
 
-    // Small glow (blend both wing colors)
+    // Glow behind the butterfly
     ctx.save();
     const glow = ctx.createRadialGradient(fx, fy, 0, fx, fy, fb.size * 2);
-    glow.addColorStop(0, fb.palLeft.glow);
+    glow.addColorStop(0, fb.glowColor);
     glow.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = glow;
     ctx.beginPath(); ctx.arc(fx, fy, fb.size * 2, 0, 6.28); ctx.fill();
     ctx.restore();
 
-    // Each wing gets its own scanned colors
-    drawWing(ctx, fx, fy, fb.size, flapAngle, fb.palRight, 1, t);
-    drawWing(ctx, fx, fy, fb.size, -flapAngle, fb.palLeft, -1, t);
+    // Draw sprite with flapping wings
+    const sp = fb.sprite;
+    const scale = fb.size / sp.s; // map display size to sprite wing scale
+    const drawW = sp.w * scale;
+    const drawH = sp.h * scale;
+    // Body center in draw coords
+    const bodyOffsetX = sp.cx * scale;
+    const bodyOffsetY = sp.cy * scale;
+
+    // Right wing: right half of sprite
+    ctx.save();
+    ctx.translate(fx, fy);
+    ctx.scale(flapCos, 1);
+    ctx.drawImage(sp.canvas,
+      sp.w/2, 0, sp.w/2, sp.h,             // source: right half
+      0, -bodyOffsetY, drawW/2, drawH       // dest: body center at origin
+    );
+    ctx.restore();
+
+    // Left wing: left half of sprite
+    ctx.save();
+    ctx.translate(fx, fy);
+    ctx.scale(-flapCos, 1); // mirror for left side
+    ctx.drawImage(sp.canvas,
+      0, 0, sp.w/2, sp.h,                  // source: left half
+      0, -bodyOffsetY, drawW/2, drawH       // dest
+    );
+    ctx.restore();
   }
 }
 
@@ -903,7 +1013,8 @@ const previewCanvas = document.getElementById('previewCanvas');
 const previewCtx = previewCanvas.getContext('2d');
 let scanAnimFrame = null;
 
-let pendingPalette = null;
+let pendingSprite = null;
+let pendingGlowColor = null;
 
 document.getElementById('scanBtn').addEventListener('click', enterScanMode);
 document.getElementById('captureBtn').addEventListener('click', captureAndSample);
@@ -1083,52 +1194,55 @@ function captureAndSample() {
     return;
   }
 
-  // Sample colors from the 4 wing zones:
-  // [0]=upper-left, [1]=lower-left, [2]=upper-right, [3]=lower-right
+  // Capture the actual drawing as a masked butterfly sprite
+  const sprite = captureButterflySpriteFromPaper(scanCanvas, rect);
+
+  // Sample a dominant color for the glow effect
   const zones = getSampleZones(rect);
   const colors = zones.map(z => sampleZoneColor(scanCtx, z));
-
-  // Build a palette from two zone colors (upper + lower of one wing)
-  function makePal(upper, lower) {
-    return {
-      pri: rgbToHex(lower),   // base/primary = lower wing color
-      sec: rgbToHex(upper),   // secondary = upper wing color
-      acc: rgbToHex(upper),   // accent = upper (highlights, eyespots)
-      glow: rgbToGlow(lower, 0.35),
-    };
+  // Pick the most vivid color for the glow
+  let bestColor = colors[0], bestSat = 0;
+  for (const c of colors) {
+    const mx = Math.max(c.r, c.g, c.b), mn = Math.min(c.r, c.g, c.b);
+    const sat = mx > 0 ? (mx - mn) / mx : 0;
+    if (sat > bestSat) { bestSat = sat; bestColor = c; }
   }
-
-  // Left wing palette from left zones, right wing from right zones
-  const palLeft  = makePal(colors[0], colors[1]);
-  const palRight = makePal(colors[2], colors[3]);
+  const glowColor = `rgba(${bestColor.r},${bestColor.g},${bestColor.b},0.35)`;
 
   // Show preview with confirm/rescan choice
-  pendingPalette = { palLeft, palRight };
+  pendingSprite = sprite;
+  pendingGlowColor = glowColor;
   scanButtons.style.display = 'none';
   scanPreview.classList.add('active');
+
+  // Draw the captured butterfly sprite in the preview
   previewCanvas.width = 200;
   previewCanvas.height = 200;
   previewCtx.clearRect(0, 0, 200, 200);
-
-  // Draw a preview butterfly with the scanned colors (each wing its own color)
-  const prevT = performance.now() / 1000;
-  drawWing(previewCtx, 100, 100, 40, 0.3, palRight, 1, prevT);
-  drawWing(previewCtx, 100, 100, 40, -0.3, palLeft, -1, prevT);
+  // Scale sprite to fit preview canvas
+  const fitScale = Math.min(180 / sprite.w, 180 / sprite.h);
+  const pw = sprite.w * fitScale, ph = sprite.h * fitScale;
+  previewCtx.drawImage(sprite.canvas,
+    0, 0, sprite.w, sprite.h,
+    (200 - pw) / 2, (200 - ph) / 2, pw, ph
+  );
 
   document.getElementById('previewMsg').textContent = 'Din fjäril!';
 }
 
 function confirmButterfly() {
-  if (pendingPalette) {
-    addForestButterfly(pendingPalette.palLeft, pendingPalette.palRight);
+  if (pendingSprite) {
+    addForestButterfly(pendingSprite, pendingGlowColor);
     document.getElementById('previewMsg').textContent = 'Din fjäril flyger in i skogen!';
-    pendingPalette = null;
+    pendingSprite = null;
+    pendingGlowColor = null;
     setTimeout(exitScanMode, 1500);
   }
 }
 
 function rescan() {
-  pendingPalette = null;
+  pendingSprite = null;
+  pendingGlowColor = null;
   scanPreview.classList.remove('active');
   scanButtons.style.display = 'flex';
   scanMsg.textContent = 'Håll upp din fjärilsteckning framför kameran';
