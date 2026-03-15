@@ -33,7 +33,72 @@
     backdrop-filter: blur(4px);
     transition: background 0.3s;
   }
-  #fullscreenBtn:hover { background: rgba(140, 70, 200, 0.9); cursor: pointer; }
+  #fullscreenBtn:hover, #scanBtn:hover { background: rgba(140, 70, 200, 0.9); cursor: pointer; }
+  #scanBtn {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    z-index: 100;
+    background: rgba(100, 50, 150, 0.7);
+    color: #fff;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    border-radius: 12px;
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: background 0.3s;
+  }
+  #scanOverlay {
+    display: none;
+    position: fixed; inset: 0;
+    z-index: 150;
+    background: rgba(0,0,0,0.85);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+  }
+  #scanOverlay.active { display: flex; }
+  #scanCanvas {
+    max-width: 90vw;
+    max-height: 70vh;
+    border: 3px solid rgba(180,100,255,0.6);
+    border-radius: 12px;
+  }
+  #scanOverlay .scan-msg {
+    color: #d4a0ff;
+    font-size: 22px;
+    text-align: center;
+  }
+  #scanOverlay .scan-buttons {
+    display: flex;
+    gap: 15px;
+  }
+  #scanOverlay button {
+    background: rgba(100, 50, 150, 0.8);
+    color: #fff;
+    border: 2px solid rgba(255,255,255,0.4);
+    border-radius: 12px;
+    padding: 12px 28px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+  #scanOverlay button:hover { background: rgba(140,70,200,0.9); }
+  #scanOverlay button.cancel { background: rgba(100,50,50,0.7); }
+  #scanOverlay button.cancel:hover { background: rgba(160,60,60,0.9); }
+  #scanPreview {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+  }
+  #scanPreview.active { display: flex; }
+  #previewCanvas {
+    width: 200px;
+    height: 200px;
+  }
   #loading {
     position: fixed; inset: 0;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -58,7 +123,21 @@
 </div>
 
 
+<button id="scanBtn">SCAN</button>
 <button id="fullscreenBtn" onclick="document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()">&#x26F6; Fullskärm</button>
+
+<div id="scanOverlay">
+  <div class="scan-msg" id="scanMsg">Håll upp din fjärilsteckning framför kameran</div>
+  <canvas id="scanCanvas"></canvas>
+  <div class="scan-buttons" id="scanButtons">
+    <button id="captureBtn">Fånga!</button>
+    <button class="cancel" id="scanCancelBtn">Avbryt</button>
+  </div>
+  <div id="scanPreview">
+    <canvas id="previewCanvas"></canvas>
+    <div class="scan-msg">Din fjäril flyger in i skogen!</div>
+  </div>
+</div>
 
 <canvas id="mainCanvas"></canvas>
 <video id="webcam" playsinline autoplay muted></video>
@@ -639,6 +718,9 @@ function render(ts) {
   // ── Layer 1: Forest background ──
   drawForest(t);
 
+  // ── Layer 1.5: Scanned butterflies flying in the forest ──
+  drawForestButterflies(t);
+
   // ── Layer 2: Butterfly wings (behind people) ──
   for (let i = 0; i < poses.length; i++) {
     const lm = poses[i];
@@ -738,6 +820,299 @@ function render(ts) {
   }
 
   requestAnimationFrame(render);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// FLYING BUTTERFLIES — scanned drawings that live in the forest
+// ═══════════════════════════════════════════════════════════════════
+const forestButterflies = [];
+
+function addForestButterfly(palette) {
+  forestButterflies.push({
+    x: Math.random(),
+    y: 0.2 + Math.random() * 0.5,
+    size: 18 + Math.random() * 14,
+    phase: Math.random() * 6.28,
+    flapSpeed: 3 + Math.random() * 2,
+    // Wandering path
+    pathPhaseX: Math.random() * 6.28,
+    pathPhaseY: Math.random() * 6.28,
+    pathSpeedX: 0.15 + Math.random() * 0.2,
+    pathSpeedY: 0.1 + Math.random() * 0.15,
+    pathRadiusX: 0.08 + Math.random() * 0.12,
+    pathRadiusY: 0.04 + Math.random() * 0.06,
+    baseX: 0.1 + Math.random() * 0.8,
+    baseY: 0.15 + Math.random() * 0.55,
+    pal: palette,
+  });
+}
+
+function drawForestButterflies(t) {
+  const W = canvas.width, H = canvas.height;
+  for (const fb of forestButterflies) {
+    // Wandering motion
+    fb.x = fb.baseX + Math.sin(t * fb.pathSpeedX + fb.pathPhaseX) * fb.pathRadiusX;
+    fb.y = fb.baseY + Math.sin(t * fb.pathSpeedY + fb.pathPhaseY) * fb.pathRadiusY;
+    // Slowly drift the base position
+    fb.baseX += Math.sin(t * 0.05 + fb.pathPhaseX) * 0.00008;
+    fb.baseY += Math.cos(t * 0.04 + fb.pathPhaseY) * 0.00005;
+    // Wrap around
+    if (fb.baseX < -0.05) fb.baseX = 1.05;
+    if (fb.baseX > 1.05) fb.baseX = -0.05;
+    fb.baseY = Math.max(0.1, Math.min(0.7, fb.baseY));
+
+    const fx = fb.x * W, fy = fb.y * H;
+    const flapAngle = Math.sin(t * fb.flapSpeed + fb.phase) * 0.7;
+
+    // Small glow
+    ctx.save();
+    const glow = ctx.createRadialGradient(fx, fy, 0, fx, fy, fb.size * 2);
+    glow.addColorStop(0, fb.pal.glow);
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(fx, fy, fb.size * 2, 0, 6.28); ctx.fill();
+    ctx.restore();
+
+    drawWing(ctx, fx, fy, fb.size, flapAngle, fb.pal, 1, t);
+    drawWing(ctx, fx, fy, fb.size, -flapAngle, fb.pal, -1, t);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SCAN MODE — detect paper, sample colors, spawn butterfly
+// ═══════════════════════════════════════════════════════════════════
+let scanMode = false;
+const scanOverlay = document.getElementById('scanOverlay');
+const scanCanvas = document.getElementById('scanCanvas');
+const scanCtx = scanCanvas.getContext('2d');
+const scanMsg = document.getElementById('scanMsg');
+const scanButtons = document.getElementById('scanButtons');
+const scanPreview = document.getElementById('scanPreview');
+const previewCanvas = document.getElementById('previewCanvas');
+const previewCtx = previewCanvas.getContext('2d');
+let scanAnimFrame = null;
+
+document.getElementById('scanBtn').addEventListener('click', enterScanMode);
+document.getElementById('captureBtn').addEventListener('click', captureAndSample);
+document.getElementById('scanCancelBtn').addEventListener('click', exitScanMode);
+
+function enterScanMode() {
+  scanMode = true;
+  scanOverlay.classList.add('active');
+  scanPreview.classList.remove('active');
+  scanButtons.style.display = 'flex';
+  scanMsg.textContent = 'Håll upp din fjärilsteckning framför kameran';
+  scanLoop();
+}
+
+function exitScanMode() {
+  scanMode = false;
+  scanOverlay.classList.remove('active');
+  if (scanAnimFrame) cancelAnimationFrame(scanAnimFrame);
+}
+
+function scanLoop() {
+  if (!scanMode || video.readyState < 2) {
+    scanAnimFrame = requestAnimationFrame(scanLoop);
+    return;
+  }
+  const vw = video.videoWidth, vh = video.videoHeight;
+  scanCanvas.width = vw;
+  scanCanvas.height = vh;
+
+  // Draw mirrored webcam
+  scanCtx.save();
+  scanCtx.translate(vw, 0);
+  scanCtx.scale(-1, 1);
+  scanCtx.drawImage(video, 0, 0);
+  scanCtx.restore();
+
+  // Detect bright rectangle (paper)
+  const rect = detectPaper(scanCtx, vw, vh);
+
+  if (rect) {
+    // Draw green outline around detected paper
+    scanCtx.strokeStyle = '#4ade80';
+    scanCtx.lineWidth = 3;
+    scanCtx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+
+    // Draw wing sample zones
+    drawSampleZones(scanCtx, rect);
+
+    scanMsg.textContent = 'Teckning hittad! Tryck "Fånga!" för att skanna';
+  } else {
+    scanMsg.textContent = 'Håll upp din fjärilsteckning framför kameran';
+  }
+
+  scanAnimFrame = requestAnimationFrame(scanLoop);
+}
+
+function detectPaper(context, w, h) {
+  // Sample at reduced resolution for speed
+  const step = 4;
+  const imgData = context.getImageData(0, 0, w, h);
+  const d = imgData.data;
+
+  // Threshold: find bright pixels (paper is white/light colored)
+  const threshold = 180;
+  let minX = w, minY = h, maxX = 0, maxY = 0;
+  let brightCount = 0;
+
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < w; x += step) {
+      const i = (y * w + x) * 4;
+      const r = d[i], g = d[i+1], b = d[i+2];
+      // Check if pixel is bright (paper-like)
+      if (r > threshold && g > threshold && b > threshold) {
+        brightCount++;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  // Need a minimum area to count as paper (at least 5% of frame)
+  const totalSamples = (w / step) * (h / step);
+  if (brightCount < totalSamples * 0.05) return null;
+
+  const rectW = maxX - minX;
+  const rectH = maxY - minY;
+  // Paper should be reasonably sized (at least 15% of frame in each dimension)
+  if (rectW < w * 0.15 || rectH < h * 0.15) return null;
+
+  // Add small padding
+  const pad = 10;
+  return {
+    x: Math.max(0, minX - pad),
+    y: Math.max(0, minY - pad),
+    w: Math.min(w - minX + pad, rectW + pad * 2),
+    h: Math.min(h - minY + pad, rectH + pad * 2),
+  };
+}
+
+// The template has the butterfly centered, with left wing in the left half
+// and right wing in the right half. We sample from 4 zones.
+function getSampleZones(rect) {
+  const cx = rect.x + rect.w / 2;
+  const cy = rect.y + rect.h / 2;
+  const zw = rect.w * 0.15; // zone width
+  const zh = rect.h * 0.15; // zone height
+  return [
+    // Upper left wing
+    { x: cx - rect.w*0.28 - zw/2, y: cy - rect.h*0.18 - zh/2, w: zw, h: zh, label: 'UL' },
+    // Lower left wing
+    { x: cx - rect.w*0.22 - zw/2, y: cy + rect.h*0.12 - zh/2, w: zw, h: zh, label: 'LL' },
+    // Upper right wing
+    { x: cx + rect.w*0.28 - zw/2, y: cy - rect.h*0.18 - zh/2, w: zw, h: zh, label: 'UR' },
+    // Lower right wing
+    { x: cx + rect.w*0.22 - zw/2, y: cy + rect.h*0.12 - zh/2, w: zw, h: zh, label: 'LR' },
+  ];
+}
+
+function drawSampleZones(context, rect) {
+  const zones = getSampleZones(rect);
+  context.lineWidth = 2;
+  for (const z of zones) {
+    context.strokeStyle = 'rgba(255,255,0,0.7)';
+    context.strokeRect(z.x, z.y, z.w, z.h);
+  }
+}
+
+function sampleZoneColor(context, zone) {
+  const imgData = context.getImageData(
+    Math.round(zone.x), Math.round(zone.y),
+    Math.round(zone.w), Math.round(zone.h)
+  );
+  const d = imgData.data;
+  let rSum = 0, gSum = 0, bSum = 0, count = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    rSum += d[i]; gSum += d[i+1]; bSum += d[i+2];
+    count++;
+  }
+  if (count === 0) return { r: 200, g: 200, b: 200 };
+  return {
+    r: Math.round(rSum / count),
+    g: Math.round(gSum / count),
+    b: Math.round(bSum / count),
+  };
+}
+
+function rgbToHex(c) {
+  return '#' + [c.r, c.g, c.b].map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
+function rgbToGlow(c, a) {
+  return `rgba(${c.r},${c.g},${c.b},${a})`;
+}
+
+function captureAndSample() {
+  if (video.readyState < 2) return;
+  const vw = video.videoWidth, vh = video.videoHeight;
+
+  // Freeze current frame
+  scanCanvas.width = vw;
+  scanCanvas.height = vh;
+  scanCtx.save();
+  scanCtx.translate(vw, 0);
+  scanCtx.scale(-1, 1);
+  scanCtx.drawImage(video, 0, 0);
+  scanCtx.restore();
+
+  const rect = detectPaper(scanCtx, vw, vh);
+  if (!rect) {
+    scanMsg.textContent = 'Ingen teckning hittad — försök igen!';
+    setTimeout(() => scanLoop(), 1500);
+    return;
+  }
+
+  // Sample colors from the 4 wing zones
+  const zones = getSampleZones(rect);
+  const colors = zones.map(z => sampleZoneColor(scanCtx, z));
+
+  // Average left and right sides for the palette
+  const leftCol = {
+    r: Math.round((colors[0].r + colors[1].r) / 2),
+    g: Math.round((colors[0].g + colors[1].g) / 2),
+    b: Math.round((colors[0].b + colors[1].b) / 2),
+  };
+  const rightCol = {
+    r: Math.round((colors[2].r + colors[3].r) / 2),
+    g: Math.round((colors[2].g + colors[3].g) / 2),
+    b: Math.round((colors[2].b + colors[3].b) / 2),
+  };
+  // Use upper colors as accent
+  const accCol = {
+    r: Math.round((colors[0].r + colors[2].r) / 2),
+    g: Math.round((colors[0].g + colors[2].g) / 2),
+    b: Math.round((colors[0].b + colors[2].b) / 2),
+  };
+
+  const newPal = {
+    pri: rgbToHex(leftCol),
+    sec: rgbToHex(rightCol),
+    acc: rgbToHex(accCol),
+    glow: rgbToGlow(leftCol, 0.35),
+  };
+
+  // Show preview
+  scanButtons.style.display = 'none';
+  scanPreview.classList.add('active');
+  previewCanvas.width = 200;
+  previewCanvas.height = 200;
+  previewCtx.clearRect(0, 0, 200, 200);
+
+  // Draw a preview butterfly with the sampled colors
+  const prevT = performance.now() / 1000;
+  drawWing(previewCtx, 100, 100, 40, 0.3, newPal, 1, prevT);
+  drawWing(previewCtx, 100, 100, 40, -0.3, newPal, -1, prevT);
+
+  // Spawn the butterfly into the forest
+  addForestButterfly(newPal);
+
+  // Auto-close after 2.5s
+  setTimeout(exitScanMode, 2500);
 }
 
 // ═══════════════════════════════════════════════════════════════════
