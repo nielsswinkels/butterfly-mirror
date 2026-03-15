@@ -7,7 +7,7 @@
 <style>
   @page {
     size: A4 portrait;
-    margin: 15mm;
+    margin: 10mm;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -18,34 +18,12 @@
     background: #fff;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   }
-  .page {
-    width: 190mm;
-    height: 267mm;
-    position: relative;
-    border: 3px solid #222;
-    padding: 10mm;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  h1 {
-    font-size: 24pt;
-    margin-bottom: 5mm;
-    color: #333;
-  }
-  .instructions {
-    font-size: 11pt;
-    color: #666;
-    text-align: center;
-    margin-bottom: 8mm;
-    line-height: 1.4;
-  }
   canvas {
     display: block;
+    border: 3px solid #222;
   }
   @media print {
     body { background: none; }
-    .page { border: 3px solid #222; }
     .no-print { display: none; }
   }
   .print-btn {
@@ -67,123 +45,130 @@
 
 <button class="print-btn no-print" onclick="window.print()">Skriv ut</button>
 
-<div class="page">
-  <h1>Måla din fjäril!</h1>
-  <p class="instructions">
-    Färglägg vingarna med kritor, pennor eller tuschpennor.<br>
-    Håll sedan upp teckningen framför kameran för att skanna den.
-  </p>
-  <canvas id="template" width="640" height="750"></canvas>
-</div>
+<canvas id="template" width="680" height="960"></canvas>
 
 <script>
 const c = document.getElementById('template');
 const ctx = c.getContext('2d');
 const W = c.width, H = c.height;
 
-// Center of butterfly
-const cx = W / 2, cy = H * 0.42;
+// ── Title ──
+ctx.fillStyle = '#333';
+ctx.font = 'bold 28px sans-serif';
+ctx.textAlign = 'center';
+ctx.fillText('Måla din fjäril!', W/2, 40);
+ctx.font = '14px sans-serif';
+ctx.fillStyle = '#777';
+ctx.fillText('Färglägg vingarna och håll upp teckningen framför kameran', W/2, 62);
+
+// Center of butterfly — positioned in the middle of the page
+const cx = W / 2;
+const cy = H * 0.46;
+
+// Wing scale — large enough to fill the page width
+const s = 210;
 
 ctx.strokeStyle = '#222';
 ctx.lineWidth = 2.5;
-ctx.fillStyle = '#fff';
 
 // ── Body ──
 ctx.lineWidth = 3;
 ctx.beginPath();
-ctx.ellipse(cx, cy, 8, 50, 0, 0, Math.PI * 2);
+ctx.ellipse(cx, cy, 10, 60, 0, 0, Math.PI * 2);
 ctx.stroke();
 
 // Head
 ctx.beginPath();
-ctx.arc(cx, cy - 55, 14, 0, Math.PI * 2);
+ctx.arc(cx, cy - 66, 16, 0, Math.PI * 2);
 ctx.stroke();
 
 // Eyes
 ctx.fillStyle = '#222';
-ctx.beginPath(); ctx.arc(cx - 6, cy - 58, 3, 0, Math.PI * 2); ctx.fill();
-ctx.beginPath(); ctx.arc(cx + 6, cy - 58, 3, 0, Math.PI * 2); ctx.fill();
+ctx.beginPath(); ctx.arc(cx - 7, cy - 69, 3.5, 0, Math.PI * 2); ctx.fill();
+ctx.beginPath(); ctx.arc(cx + 7, cy - 69, 3.5, 0, Math.PI * 2); ctx.fill();
+
+// Smile
+ctx.beginPath();
+ctx.arc(cx, cy - 63, 7, 0.2, Math.PI - 0.2);
+ctx.stroke();
 
 // Antennae
 ctx.lineWidth = 2;
 ctx.beginPath();
-ctx.moveTo(cx - 5, cy - 67);
-ctx.quadraticCurveTo(cx - 40, cy - 120, cx - 55, cy - 115);
+ctx.moveTo(cx - 6, cy - 80);
+ctx.quadraticCurveTo(cx - 55, cy - 140, cx - 70, cy - 130);
 ctx.stroke();
 ctx.beginPath();
-ctx.arc(cx - 55, cy - 115, 4, 0, Math.PI * 2);
+ctx.arc(cx - 70, cy - 130, 5, 0, Math.PI * 2);
 ctx.stroke();
 
 ctx.beginPath();
-ctx.moveTo(cx + 5, cy - 67);
-ctx.quadraticCurveTo(cx + 40, cy - 120, cx + 55, cy - 115);
+ctx.moveTo(cx + 6, cy - 80);
+ctx.quadraticCurveTo(cx + 55, cy - 140, cx + 70, cy - 130);
 ctx.stroke();
 ctx.beginPath();
-ctx.arc(cx + 55, cy - 115, 4, 0, Math.PI * 2);
+ctx.arc(cx + 70, cy - 130, 5, 0, Math.PI * 2);
 ctx.stroke();
 
-// ── Wings — large, clear zones for coloring ──
+// ── Wings ──
 ctx.lineWidth = 2.5;
 
-// Scale for wing drawing
-const s = 130;
-
 function drawTemplateWings(side) {
-  const dir = side; // 1 = right, -1 = left
+  const dir = side;
 
-  // Upper wing
+  // Upper wing — same bezier as the AR version
   ctx.beginPath();
-  ctx.moveTo(cx, cy - 15);
+  ctx.moveTo(cx, cy - 18);
   ctx.bezierCurveTo(
-    cx + dir * s * 0.5, cy - 15 - s * 0.9,
-    cx + dir * s * 1.3, cy - 15 - s * 1.1,
-    cx + dir * s * 1.0, cy - 15 - s * 0.35
+    cx + dir * s * 0.5, cy - 18 - s * 0.9,
+    cx + dir * s * 1.3, cy - 18 - s * 1.1,
+    cx + dir * s * 1.0, cy - 18 - s * 0.35
   );
   ctx.bezierCurveTo(
-    cx + dir * s * 1.35, cy - 15 - s * 0.55,
-    cx + dir * s * 1.45, cy - 15 - s * 0.05,
-    cx + dir * s * 0.85, cy - 15 + s * 0.1
+    cx + dir * s * 1.35, cy - 18 - s * 0.55,
+    cx + dir * s * 1.45, cy - 18 - s * 0.05,
+    cx + dir * s * 0.85, cy - 18 + s * 0.1
   );
   ctx.bezierCurveTo(
-    cx + dir * s * 0.45, cy - 15 + s * 0.08,
-    cx + dir * s * 0.15, cy - 15 + 0.02,
-    cx, cy - 15
+    cx + dir * s * 0.45, cy - 18 + s * 0.08,
+    cx + dir * s * 0.15, cy - 18 + 0.02,
+    cx, cy - 18
   );
   ctx.closePath();
   ctx.stroke();
 
-  // Upper wing vein lines (for decoration guidance)
+  // Upper wing veins
   ctx.save();
   ctx.lineWidth = 1;
   ctx.strokeStyle = '#bbb';
-  ctx.setLineDash([4, 4]);
+  ctx.setLineDash([5, 5]);
   ctx.beginPath();
-  ctx.moveTo(cx, cy - 15);
-  ctx.quadraticCurveTo(cx + dir * s * 0.45, cy - 15 - s * 0.55, cx + dir * s * 0.95, cy - 15 - s * 0.35);
+  ctx.moveTo(cx, cy - 18);
+  ctx.quadraticCurveTo(cx + dir * s * 0.45, cy - 18 - s * 0.55, cx + dir * s * 0.95, cy - 18 - s * 0.35);
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(cx, cy - 15);
-  ctx.quadraticCurveTo(cx + dir * s * 0.3, cy - 15 - s * 0.8, cx + dir * s * 0.75, cy - 15 - s * 0.7);
+  ctx.moveTo(cx, cy - 18);
+  ctx.quadraticCurveTo(cx + dir * s * 0.3, cy - 18 - s * 0.8, cx + dir * s * 0.75, cy - 18 - s * 0.7);
   ctx.stroke();
   ctx.restore();
 
   // Lower wing
   ctx.beginPath();
-  ctx.moveTo(cx, cy + 5);
+  ctx.moveTo(cx, cy + 6);
   ctx.bezierCurveTo(
-    cx + dir * s * 0.25, cy + 5 + s * 0.15,
-    cx + dir * s * 1.05, cy + 5 + s * 0.25,
-    cx + dir * s * 0.85, cy + 5 + s * 0.65
+    cx + dir * s * 0.25, cy + 6 + s * 0.15,
+    cx + dir * s * 1.05, cy + 6 + s * 0.25,
+    cx + dir * s * 0.85, cy + 6 + s * 0.65
   );
   ctx.bezierCurveTo(
-    cx + dir * s * 0.95, cy + 5 + s * 0.9,
-    cx + dir * s * 0.5, cy + 5 + s * 1.0,
-    cx + dir * s * 0.2, cy + 5 + s * 0.75
+    cx + dir * s * 0.95, cy + 6 + s * 0.9,
+    cx + dir * s * 0.5, cy + 6 + s * 1.0,
+    cx + dir * s * 0.2, cy + 6 + s * 0.75
   );
   ctx.bezierCurveTo(
-    cx + dir * s * 0.05, cy + 5 + s * 0.45,
-    cx, cy + 5 + s * 0.1,
-    cx, cy + 5
+    cx + dir * s * 0.05, cy + 6 + s * 0.45,
+    cx, cy + 6 + s * 0.1,
+    cx, cy + 6
   );
   ctx.closePath();
   ctx.stroke();
@@ -192,10 +177,10 @@ function drawTemplateWings(side) {
   ctx.save();
   ctx.lineWidth = 1;
   ctx.strokeStyle = '#bbb';
-  ctx.setLineDash([4, 4]);
+  ctx.setLineDash([5, 5]);
   ctx.beginPath();
-  ctx.moveTo(cx, cy + 5);
-  ctx.quadraticCurveTo(cx + dir * s * 0.3, cy + 5 + s * 0.4, cx + dir * s * 0.65, cy + 5 + s * 0.7);
+  ctx.moveTo(cx, cy + 6);
+  ctx.quadraticCurveTo(cx + dir * s * 0.3, cy + 6 + s * 0.4, cx + dir * s * 0.65, cy + 6 + s * 0.7);
   ctx.stroke();
   ctx.restore();
 }
@@ -203,36 +188,37 @@ function drawTemplateWings(side) {
 drawTemplateWings(1);
 drawTemplateWings(-1);
 
-// ── Color sample zone indicators (subtle dotted circles) ──
+// ── Color sample zone indicators ──
+// These positions MUST match getSampleZones() in index.html
+// We compute them as fractions of the full page, since the scanner
+// detects the whole paper and uses fractional offsets from center.
+
+// The 4 sample zones as fractions of page (from center):
+// Upper wings: x=±0.28, y=-0.14  |  Lower wings: x=±0.22, y=+0.10
+// (these match the getSampleZones function in index.html)
+
 ctx.save();
 ctx.strokeStyle = '#ccc';
 ctx.lineWidth = 1.5;
 ctx.setLineDash([3, 3]);
 
-// Upper left zone
-ctx.beginPath();
-ctx.arc(cx - s * 0.65, cy - 15 - s * 0.45, 18, 0, Math.PI * 2);
-ctx.stroke();
-// Lower left zone
-ctx.beginPath();
-ctx.arc(cx - s * 0.5, cy + 5 + s * 0.4, 18, 0, Math.PI * 2);
-ctx.stroke();
-// Upper right zone
-ctx.beginPath();
-ctx.arc(cx + s * 0.65, cy - 15 - s * 0.45, 18, 0, Math.PI * 2);
-ctx.stroke();
-// Lower right zone
-ctx.beginPath();
-ctx.arc(cx + s * 0.5, cy + 5 + s * 0.4, 18, 0, Math.PI * 2);
-ctx.stroke();
+const sampleR = 20;
+// Upper left
+ctx.beginPath(); ctx.arc(cx - W*0.28, cy - H*0.14, sampleR, 0, Math.PI*2); ctx.stroke();
+// Lower left
+ctx.beginPath(); ctx.arc(cx - W*0.22, cy + H*0.10, sampleR, 0, Math.PI*2); ctx.stroke();
+// Upper right
+ctx.beginPath(); ctx.arc(cx + W*0.28, cy - H*0.14, sampleR, 0, Math.PI*2); ctx.stroke();
+// Lower right
+ctx.beginPath(); ctx.arc(cx + W*0.22, cy + H*0.10, sampleR, 0, Math.PI*2); ctx.stroke();
 
 ctx.restore();
 
-// ── Footer text ──
-ctx.fillStyle = '#999';
-ctx.font = '13px sans-serif';
+// ── Footer ──
+ctx.fillStyle = '#aaa';
+ctx.font = '12px sans-serif';
 ctx.textAlign = 'center';
-ctx.fillText('Färglägg vingarna och håll upp teckningen framför kameran!', W/2, H - 20);
+ctx.fillText('Fjärilsskogen', W/2, H - 15);
 </script>
 </body>
 </html>
