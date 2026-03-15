@@ -135,7 +135,11 @@
   </div>
   <div id="scanPreview">
     <canvas id="previewCanvas"></canvas>
-    <div class="scan-msg">Din fjäril flyger in i skogen!</div>
+    <div class="scan-msg" id="previewMsg">Din fjäril!</div>
+    <div class="scan-buttons" id="previewButtons">
+      <button id="confirmBtn">Släpp fri i skogen!</button>
+      <button class="cancel" id="rescanBtn">Skanna igen</button>
+    </div>
   </div>
 </div>
 
@@ -168,6 +172,12 @@ function resize() {
 }
 window.addEventListener('resize', resize);
 resize();
+
+// Hide fullscreen button when already in fullscreen
+const fullscreenBtn = document.getElementById('fullscreenBtn');
+document.addEventListener('fullscreenchange', () => {
+  fullscreenBtn.style.display = document.fullscreenElement ? 'none' : '';
+});
 
 // ═══════════════════════════════════════════════════════════════════
 // WING PALETTES — one per detected person
@@ -892,9 +902,13 @@ const previewCanvas = document.getElementById('previewCanvas');
 const previewCtx = previewCanvas.getContext('2d');
 let scanAnimFrame = null;
 
+let pendingPalette = null;
+
 document.getElementById('scanBtn').addEventListener('click', enterScanMode);
 document.getElementById('captureBtn').addEventListener('click', captureAndSample);
 document.getElementById('scanCancelBtn').addEventListener('click', exitScanMode);
+document.getElementById('confirmBtn').addEventListener('click', confirmButterfly);
+document.getElementById('rescanBtn').addEventListener('click', rescan);
 
 function enterScanMode() {
   scanMode = true;
@@ -1001,14 +1015,14 @@ function getSampleZones(rect) {
   const zw = rect.w * 0.12; // zone width
   const zh = rect.h * 0.10; // zone height
   return [
-    // Upper left wing — matches template sample circle positions
-    { x: cx - rect.w*0.28 - zw/2, y: cy - rect.h*0.14 - zh/2, w: zw, h: zh, label: 'UL' },
+    // Upper left wing — pulled inward toward body center
+    { x: cx - rect.w*0.22 - zw/2, y: cy - rect.h*0.11 - zh/2, w: zw, h: zh, label: 'UL' },
     // Lower left wing
-    { x: cx - rect.w*0.22 - zw/2, y: cy + rect.h*0.10 - zh/2, w: zw, h: zh, label: 'LL' },
+    { x: cx - rect.w*0.17 - zw/2, y: cy + rect.h*0.08 - zh/2, w: zw, h: zh, label: 'LL' },
     // Upper right wing
-    { x: cx + rect.w*0.28 - zw/2, y: cy - rect.h*0.14 - zh/2, w: zw, h: zh, label: 'UR' },
+    { x: cx + rect.w*0.22 - zw/2, y: cy - rect.h*0.11 - zh/2, w: zw, h: zh, label: 'UR' },
     // Lower right wing
-    { x: cx + rect.w*0.22 - zw/2, y: cy + rect.h*0.10 - zh/2, w: zw, h: zh, label: 'LR' },
+    { x: cx + rect.w*0.17 - zw/2, y: cy + rect.h*0.08 - zh/2, w: zw, h: zh, label: 'LR' },
   ];
 }
 
@@ -1097,7 +1111,8 @@ function captureAndSample() {
     glow: rgbToGlow(leftCol, 0.35),
   };
 
-  // Show preview
+  // Show preview with confirm/rescan choice
+  pendingPalette = newPal;
   scanButtons.style.display = 'none';
   scanPreview.classList.add('active');
   previewCanvas.width = 200;
@@ -1109,11 +1124,24 @@ function captureAndSample() {
   drawWing(previewCtx, 100, 100, 40, 0.3, newPal, 1, prevT);
   drawWing(previewCtx, 100, 100, 40, -0.3, newPal, -1, prevT);
 
-  // Spawn the butterfly into the forest
-  addForestButterfly(newPal);
+  document.getElementById('previewMsg').textContent = 'Din fjäril!';
+}
 
-  // Auto-close after 2.5s
-  setTimeout(exitScanMode, 2500);
+function confirmButterfly() {
+  if (pendingPalette) {
+    addForestButterfly(pendingPalette);
+    document.getElementById('previewMsg').textContent = 'Din fjäril flyger in i skogen!';
+    pendingPalette = null;
+    setTimeout(exitScanMode, 1500);
+  }
+}
+
+function rescan() {
+  pendingPalette = null;
+  scanPreview.classList.remove('active');
+  scanButtons.style.display = 'flex';
+  scanMsg.textContent = 'Håll upp din fjärilsteckning framför kameran';
+  scanLoop();
 }
 
 // ═══════════════════════════════════════════════════════════════════
