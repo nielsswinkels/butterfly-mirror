@@ -1086,29 +1086,35 @@ function captureAndSample() {
   const zones = getSampleZones(rect);
   const colors = zones.map(z => sampleZoneColor(scanCtx, z));
 
-  // Average left and right sides for the palette
-  const leftCol = {
-    r: Math.round((colors[0].r + colors[1].r) / 2),
-    g: Math.round((colors[0].g + colors[1].g) / 2),
-    b: Math.round((colors[0].b + colors[1].b) / 2),
-  };
-  const rightCol = {
-    r: Math.round((colors[2].r + colors[3].r) / 2),
-    g: Math.round((colors[2].g + colors[3].g) / 2),
-    b: Math.round((colors[2].b + colors[3].b) / 2),
-  };
-  // Use upper colors as accent
-  const accCol = {
-    r: Math.round((colors[0].r + colors[2].r) / 2),
-    g: Math.round((colors[0].g + colors[2].g) / 2),
-    b: Math.round((colors[0].b + colors[2].b) / 2),
-  };
+  // Measure how "colorful" each sample is (filter out white/uncolored paper)
+  function saturation(c) {
+    const max = Math.max(c.r, c.g, c.b);
+    const min = Math.min(c.r, c.g, c.b);
+    if (max === 0) return 0;
+    return (max - min) / max;
+  }
+  function isColored(c) {
+    // White paper: high brightness, low saturation
+    const brightness = (c.r + c.g + c.b) / 3;
+    return saturation(c) > 0.1 || brightness < 200;
+  }
+
+  // Separate colored zones from uncolored (white paper) zones
+  const colored = colors.filter(isColored);
+  // Sort by saturation so the most vivid colors come first
+  const sorted = [...colors].sort((a, b) => saturation(b) - saturation(a));
+
+  // Build palette: use the most saturated colors directly
+  // pri = most colorful, sec = second most, acc = third (or pri again)
+  const pri = colored.length > 0 ? sorted[0] : colors[0];
+  const sec = colored.length > 1 ? sorted[1] : pri;
+  const acc = colored.length > 2 ? sorted[2] : (colored.length > 1 ? sorted[0] : pri);
 
   const newPal = {
-    pri: rgbToHex(leftCol),
-    sec: rgbToHex(rightCol),
-    acc: rgbToHex(accCol),
-    glow: rgbToGlow(leftCol, 0.35),
+    pri: rgbToHex(pri),
+    sec: rgbToHex(sec),
+    acc: rgbToHex(acc),
+    glow: rgbToGlow(pri, 0.35),
   };
 
   // Show preview with confirm/rescan choice
