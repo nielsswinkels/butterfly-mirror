@@ -837,14 +837,13 @@ function render(ts) {
 // ═══════════════════════════════════════════════════════════════════
 const forestButterflies = [];
 
-function addForestButterfly(palette) {
+function addForestButterfly(palLeft, palRight) {
   forestButterflies.push({
     x: Math.random(),
     y: 0.2 + Math.random() * 0.5,
     size: 18 + Math.random() * 14,
     phase: Math.random() * 6.28,
     flapSpeed: 3 + Math.random() * 2,
-    // Wandering path
     pathPhaseX: Math.random() * 6.28,
     pathPhaseY: Math.random() * 6.28,
     pathSpeedX: 0.15 + Math.random() * 0.2,
@@ -853,7 +852,8 @@ function addForestButterfly(palette) {
     pathRadiusY: 0.04 + Math.random() * 0.06,
     baseX: 0.1 + Math.random() * 0.8,
     baseY: 0.15 + Math.random() * 0.55,
-    pal: palette,
+    palLeft,
+    palRight,
   });
 }
 
@@ -874,17 +874,18 @@ function drawForestButterflies(t) {
     const fx = fb.x * W, fy = fb.y * H;
     const flapAngle = Math.sin(t * fb.flapSpeed + fb.phase) * 0.7;
 
-    // Small glow
+    // Small glow (blend both wing colors)
     ctx.save();
     const glow = ctx.createRadialGradient(fx, fy, 0, fx, fy, fb.size * 2);
-    glow.addColorStop(0, fb.pal.glow);
+    glow.addColorStop(0, fb.palLeft.glow);
     glow.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = glow;
     ctx.beginPath(); ctx.arc(fx, fy, fb.size * 2, 0, 6.28); ctx.fill();
     ctx.restore();
 
-    drawWing(ctx, fx, fy, fb.size, flapAngle, fb.pal, 1, t);
-    drawWing(ctx, fx, fy, fb.size, -flapAngle, fb.pal, -1, t);
+    // Each wing gets its own scanned colors
+    drawWing(ctx, fx, fy, fb.size, flapAngle, fb.palRight, 1, t);
+    drawWing(ctx, fx, fy, fb.size, -flapAngle, fb.palLeft, -1, t);
   }
 }
 
@@ -1082,60 +1083,44 @@ function captureAndSample() {
     return;
   }
 
-  // Sample colors from the 4 wing zones
+  // Sample colors from the 4 wing zones:
+  // [0]=upper-left, [1]=lower-left, [2]=upper-right, [3]=lower-right
   const zones = getSampleZones(rect);
   const colors = zones.map(z => sampleZoneColor(scanCtx, z));
 
-  // Measure how "colorful" each sample is (filter out white/uncolored paper)
-  function saturation(c) {
-    const max = Math.max(c.r, c.g, c.b);
-    const min = Math.min(c.r, c.g, c.b);
-    if (max === 0) return 0;
-    return (max - min) / max;
-  }
-  function isColored(c) {
-    // White paper: high brightness, low saturation
-    const brightness = (c.r + c.g + c.b) / 3;
-    return saturation(c) > 0.1 || brightness < 200;
+  // Build a palette from two zone colors (upper + lower of one wing)
+  function makePal(upper, lower) {
+    return {
+      pri: rgbToHex(lower),   // base/primary = lower wing color
+      sec: rgbToHex(upper),   // secondary = upper wing color
+      acc: rgbToHex(upper),   // accent = upper (highlights, eyespots)
+      glow: rgbToGlow(lower, 0.35),
+    };
   }
 
-  // Separate colored zones from uncolored (white paper) zones
-  const colored = colors.filter(isColored);
-  // Sort by saturation so the most vivid colors come first
-  const sorted = [...colors].sort((a, b) => saturation(b) - saturation(a));
-
-  // Build palette: use the most saturated colors directly
-  // pri = most colorful, sec = second most, acc = third (or pri again)
-  const pri = colored.length > 0 ? sorted[0] : colors[0];
-  const sec = colored.length > 1 ? sorted[1] : pri;
-  const acc = colored.length > 2 ? sorted[2] : (colored.length > 1 ? sorted[0] : pri);
-
-  const newPal = {
-    pri: rgbToHex(pri),
-    sec: rgbToHex(sec),
-    acc: rgbToHex(acc),
-    glow: rgbToGlow(pri, 0.35),
-  };
+  // Left wing palette from left zones, right wing from right zones
+  const palLeft  = makePal(colors[0], colors[1]);
+  const palRight = makePal(colors[2], colors[3]);
 
   // Show preview with confirm/rescan choice
-  pendingPalette = newPal;
+  pendingPalette = { palLeft, palRight };
   scanButtons.style.display = 'none';
   scanPreview.classList.add('active');
   previewCanvas.width = 200;
   previewCanvas.height = 200;
   previewCtx.clearRect(0, 0, 200, 200);
 
-  // Draw a preview butterfly with the sampled colors
+  // Draw a preview butterfly with the scanned colors (each wing its own color)
   const prevT = performance.now() / 1000;
-  drawWing(previewCtx, 100, 100, 40, 0.3, newPal, 1, prevT);
-  drawWing(previewCtx, 100, 100, 40, -0.3, newPal, -1, prevT);
+  drawWing(previewCtx, 100, 100, 40, 0.3, palRight, 1, prevT);
+  drawWing(previewCtx, 100, 100, 40, -0.3, palLeft, -1, prevT);
 
   document.getElementById('previewMsg').textContent = 'Din fjäril!';
 }
 
 function confirmButterfly() {
   if (pendingPalette) {
-    addForestButterfly(pendingPalette);
+    addForestButterfly(pendingPalette.palLeft, pendingPalette.palRight);
     document.getElementById('previewMsg').textContent = 'Din fjäril flyger in i skogen!';
     pendingPalette = null;
     setTimeout(exitScanMode, 1500);
