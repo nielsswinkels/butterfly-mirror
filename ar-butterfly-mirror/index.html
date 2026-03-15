@@ -987,13 +987,13 @@ function drawForestButterflies(t) {
     );
     ctx.restore();
 
-    // Left wing: left half of sprite
+    // Left wing: left half of sprite (already correctly oriented, just position left)
     ctx.save();
     ctx.translate(fx, fy);
-    ctx.scale(-flapCos, 1); // mirror for left side
+    ctx.scale(flapCos, 1);
     ctx.drawImage(sp.canvas,
       0, 0, sp.w/2, sp.h,                  // source: left half
-      0, -bodyOffsetY, drawW/2, drawH       // dest
+      -drawW/2, -bodyOffsetY, drawW/2, drawH // dest: draw to the left of center
     );
     ctx.restore();
   }
