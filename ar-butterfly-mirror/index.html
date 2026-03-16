@@ -1307,14 +1307,21 @@ async function init() {
         if (result.landmarks) {
           poses = smoothLandmarks(result.landmarks);
         }
-        // Get segmentation mask as Float32Array
+        // Get segmentation masks and merge all persons into one mask
         if (result.segmentationMasks && result.segmentationMasks.length > 0) {
-          const mask = result.segmentationMasks[0];
-          // getAsFloat32Array returns per-pixel confidence values (0-1)
           try {
-            segmentationMask = mask.getAsFloat32Array();
-            maskWidth = mask.width;
-            maskHeight = mask.height;
+            const firstMask = result.segmentationMasks[0];
+            maskWidth = firstMask.width;
+            maskHeight = firstMask.height;
+            const merged = firstMask.getAsFloat32Array().slice(); // copy
+            // Merge additional person masks by taking max confidence per pixel
+            for (let m = 1; m < result.segmentationMasks.length; m++) {
+              const extra = result.segmentationMasks[m].getAsFloat32Array();
+              for (let p = 0; p < merged.length; p++) {
+                if (extra[p] > merged[p]) merged[p] = extra[p];
+              }
+            }
+            segmentationMask = merged;
           } catch(e) {
             // Some versions/delegates may not support this; fall back gracefully
           }
