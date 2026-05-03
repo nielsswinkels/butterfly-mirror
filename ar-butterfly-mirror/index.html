@@ -572,37 +572,104 @@ function drawSparkles(targetCtx, cx, cy, scale, pal, t, id) {
 let poses = [];
 let segmentationMask = null; // Float32Array from PoseLandmarker
 let maskWidth = 0, maskHeight = 0;
-const prevPositions = new Map();
 
 // ═══════════════════════════════════════════════════════════════════
-// LANDMARK SMOOTHING — exponential moving average to reduce jitter
+// STABLE POSE TRACKING — match detections to tracked persons by proximity
+// Prevents index shuffling, deduplicates overlapping detections,
+// and filters out small false-positive poses.
 // ═══════════════════════════════════════════════════════════════════
-const SMOOTH = 0.35; // 0 = no smoothing, 1 = frozen. 0.35 = gentle smoothing
-const smoothedPoses = [];
+const SMOOTH = 0.35;
+const MIN_SHOULDER_DIST = 0.03; // minimum normalized shoulder span to accept a pose
+const DEDUP_DIST = 0.08; // if two poses' torso centers are closer than this, keep only the one with better visibility
+const MAX_MATCH_DIST = 0.15; // max distance to match a detection to a tracked person
+const TRACK_TIMEOUT = 500; // ms before a lost track is removed
 
-function smoothLandmarks(rawPoses) {
-  // Grow/shrink smoothed array to match
-  while (smoothedPoses.length < rawPoses.length) {
-    smoothedPoses.push(null);
-  }
-  smoothedPoses.length = rawPoses.length;
+let trackedPersons = []; // { id, landmarks (smoothed), lastSeen (timestamp), phase, smoothMotion }
+let nextPersonId = 0;
 
-  for (let i = 0; i < rawPoses.length; i++) {
-    const raw = rawPoses[i];
-    if (!smoothedPoses[i]) {
-      // First frame for this pose — copy directly
-      smoothedPoses[i] = raw.map(lm => ({ ...lm }));
-      continue;
-    }
-    const prev = smoothedPoses[i];
-    for (let j = 0; j < raw.length && j < prev.length; j++) {
-      prev[j].x = prev[j].x * SMOOTH + raw[j].x * (1 - SMOOTH);
-      prev[j].y = prev[j].y * SMOOTH + raw[j].y * (1 - SMOOTH);
-      prev[j].z = prev[j].z * SMOOTH + raw[j].z * (1 - SMOOTH);
-      prev[j].visibility = raw[j].visibility; // don't smooth visibility
+function getShoulderCenter(lm) {
+  const ls = lm[11], rs = lm[12];
+  if (!ls || !rs || ls.visibility < 0.4 || rs.visibility < 0.4) return null;
+  const dist = Math.hypot(rs.x - ls.x, rs.y - ls.y);
+  if (dist < MIN_SHOULDER_DIST) return null;
+  return { x: (ls.x + rs.x) / 2, y: (ls.y + rs.y) / 2, dist };
+}
+
+function processPoses(rawPoses, now) {
+  // 1) Filter: only keep poses with visible shoulders and minimum size
+  const valid = [];
+  for (const lm of rawPoses) {
+    const sc = getShoulderCenter(lm);
+    if (sc) valid.push({ lm, cx: sc.x, cy: sc.y, shoulderDist: sc.dist });
+  }
+
+  // 2) Deduplicate: if two detections overlap, keep the one with wider shoulders
+  const keep = valid.map(() => true);
+  for (let a = 0; a < valid.length; a++) {
+    if (!keep[a]) continue;
+    for (let b = a + 1; b < valid.length; b++) {
+      if (!keep[b]) continue;
+      const d = Math.hypot(valid[a].cx - valid[b].cx, valid[a].cy - valid[b].cy);
+      if (d < DEDUP_DIST) {
+        keep[valid[a].shoulderDist >= valid[b].shoulderDist ? b : a] = false;
+      }
     }
   }
-  return smoothedPoses;
+  const deduped = valid.filter((_, i) => keep[i]);
+
+  // 3) Match detections to existing tracked persons (Hungarian-lite: greedy nearest)
+  const matched = new Set();    // indices into trackedPersons
+  const assigned = new Set();   // indices into deduped
+  const pairs = [];
+
+  // Build all candidate pairs sorted by distance
+  for (let d = 0; d < deduped.length; d++) {
+    for (let t = 0; t < trackedPersons.length; t++) {
+      const tp = trackedPersons[t];
+      const sc = getShoulderCenter(tp.landmarks);
+      if (!sc) continue;
+      const dist = Math.hypot(deduped[d].cx - sc.x, deduped[d].cy - sc.y);
+      if (dist < MAX_MATCH_DIST) pairs.push({ d, t, dist });
+    }
+  }
+  pairs.sort((a, b) => a.dist - b.dist);
+
+  for (const p of pairs) {
+    if (matched.has(p.t) || assigned.has(p.d)) continue;
+    matched.add(p.t);
+    assigned.add(p.d);
+    // Smooth update existing track
+    const tp = trackedPersons[p.t];
+    const raw = deduped[p.d].lm;
+    for (let j = 0; j < raw.length && j < tp.landmarks.length; j++) {
+      tp.landmarks[j].x = tp.landmarks[j].x * SMOOTH + raw[j].x * (1 - SMOOTH);
+      tp.landmarks[j].y = tp.landmarks[j].y * SMOOTH + raw[j].y * (1 - SMOOTH);
+      tp.landmarks[j].z = tp.landmarks[j].z * SMOOTH + raw[j].z * (1 - SMOOTH);
+      tp.landmarks[j].visibility = raw[j].visibility;
+    }
+    tp.lastSeen = now;
+  }
+
+  // 4) Create new tracks for unmatched detections
+  for (let d = 0; d < deduped.length; d++) {
+    if (assigned.has(d)) continue;
+    trackedPersons.push({
+      id: nextPersonId++,
+      landmarks: deduped[d].lm.map(lm => ({ ...lm })),
+      lastSeen: now,
+      phase: nextPersonId * 1.1,
+      smoothMotion: 0,
+      prevCx: deduped[d].cx,
+      prevCy: deduped[d].cy,
+      prevT: now / 1000,
+    });
+  }
+
+  // 5) Remove stale tracks
+  trackedPersons = trackedPersons.filter(tp => now - tp.lastSeen < TRACK_TIMEOUT);
+
+  // 6) Output: set poses array from tracked persons
+  poses = trackedPersons.map(tp => tp.landmarks);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -732,36 +799,27 @@ function render(ts) {
   drawForestButterflies(t);
 
   // ── Layer 2: Butterfly wings (behind people) ──
-  for (let i = 0; i < poses.length; i++) {
-    const lm = poses[i];
+  for (let i = 0; i < trackedPersons.length; i++) {
+    const tp = trackedPersons[i];
+    const lm = tp.landmarks;
     const ls = lm[11], rs = lm[12]; // shoulders
     if (!ls || !rs || ls.visibility < 0.4 || rs.visibility < 0.4) continue;
 
-    const pal = wingPalettes[i % wingPalettes.length];
+    const pal = wingPalettes[tp.id % wingPalettes.length];
     const lx = (1-ls.x)*W, ly = ls.y*H;
     const rx = (1-rs.x)*W, ry = rs.y*H;
     const cx = (lx+rx)/2, cy = (ly+ry)/2;
     const sDist = Math.hypot(rx-lx, ry-ly);
     const wScale = sDist * 1.15;
 
-    // Motion → faster flap (using phase accumulator for smooth animation)
-    const key = `p${i}`;
-    const prev = prevPositions.get(key);
-    let motion = 0;
-    if (prev) {
-      motion = Math.hypot(cx - prev.x, cy - prev.y);
-      // Smooth the motion value itself to avoid spikes
-      prev.smoothMotion = (prev.smoothMotion || 0) * 0.85 + motion * 0.15;
-      // Accumulate phase smoothly instead of multiplying t * speed
-      const flapSpeed = 1.8 + Math.min(prev.smoothMotion * 0.04, 3);
-      const dt = t - (prev.t || t);
-      prev.phase = (prev.phase || i * 1.1) + flapSpeed * dt;
-      prev.x = cx; prev.y = cy; prev.t = t;
-    } else {
-      prevPositions.set(key, { x: cx, y: cy, t, phase: i * 1.1, smoothMotion: 0 });
-    }
-    const phase = prev ? prev.phase : 0;
-    const flapAngle = Math.sin(phase) * 0.5;
+    // Motion → faster flap (using phase accumulator per tracked person)
+    const motion = Math.hypot(cx - (tp.prevCx || cx), cy - (tp.prevCy || cy));
+    tp.smoothMotion = (tp.smoothMotion || 0) * 0.85 + motion * 0.15;
+    const flapSpeed = 1.8 + Math.min(tp.smoothMotion * 0.04, 3);
+    const dt = t - (tp.prevT || t);
+    tp.phase = (tp.phase || 0) + flapSpeed * dt;
+    tp.prevCx = cx; tp.prevCy = cy; tp.prevT = t;
+    const flapAngle = Math.sin(tp.phase) * 0.5;
 
     // Wing glow
     const gg = ctx.createRadialGradient(cx,cy,wScale*0.15,cx,cy,wScale*1.6);
@@ -777,22 +835,24 @@ function render(ts) {
   drawPersonCutout(W, H);
 
   // ── Layer 4: Sparkles (in front of everything) ──
-  for (let i = 0; i < poses.length; i++) {
-    const lm = poses[i];
+  for (let i = 0; i < trackedPersons.length; i++) {
+    const tp = trackedPersons[i];
+    const lm = tp.landmarks;
     const ls = lm[11], rs = lm[12];
     if (!ls || !rs || ls.visibility < 0.4 || rs.visibility < 0.4) continue;
-    const pal = wingPalettes[i % wingPalettes.length];
+    const pal = wingPalettes[tp.id % wingPalettes.length];
     const lx = (1-ls.x)*W, ly = ls.y*H;
     const rx = (1-rs.x)*W, ry = rs.y*H;
     const cx = (lx+rx)/2, cy = (ly+ry)/2;
     const sDist = Math.hypot(rx-lx, ry-ly);
     const wScale = sDist * 1.15;
-    drawSparkles(ctx, cx, cy, wScale, pal, t, i);
+    drawSparkles(ctx, cx, cy, wScale, pal, t, tp.id);
   }
 
   // ── Layer 5: Rainbow when both arms are raised ──
-  for (let i = 0; i < poses.length; i++) {
-    const lm = poses[i];
+  for (let i = 0; i < trackedPersons.length; i++) {
+    const tp = trackedPersons[i];
+    const lm = tp.landmarks;
     // Landmarks: 11/12 = shoulders, 15/16 = wrists
     const ls = lm[11], rs = lm[12], lw = lm[15], rw = lm[16];
     if (!ls || !rs || !lw || !rw) continue;
@@ -805,8 +865,8 @@ function render(ts) {
       const lwx = (1-lw.x)*W, lwy = lw.y*H;
       const rwx = (1-rw.x)*W, rwy = rw.y*H;
 
-      // Smooth the rainbow activation
-      const key = `rainbow_${i}`;
+      // Smooth the rainbow activation (keyed by stable person id)
+      const key = `rainbow_${tp.id}`;
       const prevAlpha = rainbowAlpha.get(key) || 0;
       const targetAlpha = 1;
       const alpha = prevAlpha + (targetAlpha - prevAlpha) * 0.1;
@@ -817,7 +877,7 @@ function render(ts) {
       }
     } else {
       // Fade out
-      const key = `rainbow_${i}`;
+      const key = `rainbow_${tp.id}`;
       const prevAlpha = rainbowAlpha.get(key) || 0;
       const alpha = prevAlpha * 0.9;
       rainbowAlpha.set(key, alpha);
@@ -1305,7 +1365,7 @@ async function init() {
       const result = poseLandmarker.detectForVideo(video, performance.now());
       if (result) {
         if (result.landmarks) {
-          poses = smoothLandmarks(result.landmarks);
+          processPoses(result.landmarks, performance.now());
         }
         // Get segmentation masks and merge all persons into one mask
         if (result.segmentationMasks && result.segmentationMasks.length > 0) {
