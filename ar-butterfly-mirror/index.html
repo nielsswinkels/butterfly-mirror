@@ -1087,7 +1087,7 @@ function enterScanMode() {
   scanOverlay.classList.add('active');
   scanPreview.classList.remove('active');
   scanButtons.style.display = 'flex';
-  scanMsg.textContent = 'Håll upp din fjärilsteckning framför kameran';
+  scanMsg.textContent = 'Placera teckningen i rutan och tryck "Fånga!"';
   scanLoop();
 }
 
@@ -1095,6 +1095,24 @@ function exitScanMode() {
   scanMode = false;
   scanOverlay.classList.remove('active');
   if (scanAnimFrame) cancelAnimationFrame(scanAnimFrame);
+}
+
+// Fixed guide rectangle: A4 portrait proportions centered in the webcam frame
+function getGuideRect(vw, vh) {
+  const aspect = 680 / 960; // A4-ish (template proportions)
+  const margin = 0.08; // 8% margin on each side
+  let rh = vh * (1 - margin * 2);
+  let rw = rh * aspect;
+  if (rw > vw * (1 - margin * 2)) {
+    rw = vw * (1 - margin * 2);
+    rh = rw / aspect;
+  }
+  return {
+    x: (vw - rw) / 2,
+    y: (vh - rh) / 2,
+    w: rw,
+    h: rh,
+  };
 }
 
 function scanLoop() {
@@ -1113,98 +1131,54 @@ function scanLoop() {
   scanCtx.drawImage(video, 0, 0);
   scanCtx.restore();
 
-  // Detect bright rectangle (paper)
-  const rect = detectPaper(scanCtx, vw, vh);
+  // Dim area outside the guide rectangle
+  const rect = getGuideRect(vw, vh);
+  scanCtx.fillStyle = 'rgba(0,0,0,0.45)';
+  scanCtx.fillRect(0, 0, vw, rect.y);                          // top
+  scanCtx.fillRect(0, rect.y + rect.h, vw, vh - rect.y - rect.h); // bottom
+  scanCtx.fillRect(0, rect.y, rect.x, rect.h);                 // left
+  scanCtx.fillRect(rect.x + rect.w, rect.y, vw - rect.x - rect.w, rect.h); // right
 
-  if (rect) {
-    // Draw green outline around detected paper
-    scanCtx.strokeStyle = '#4ade80';
-    scanCtx.lineWidth = 3;
-    scanCtx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+  // Draw guide rectangle
+  scanCtx.strokeStyle = 'rgba(180,100,255,0.8)';
+  scanCtx.lineWidth = 3;
+  scanCtx.setLineDash([10, 6]);
+  scanCtx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+  scanCtx.setLineDash([]);
 
-    // Draw wing sample zones
-    drawSampleZones(scanCtx, rect);
-
-    scanMsg.textContent = 'Teckning hittad! Tryck "Fånga!" för att skanna';
-  } else {
-    scanMsg.textContent = 'Håll upp din fjärilsteckning framför kameran';
+  // Corner markers for easier alignment
+  const cornerLen = Math.min(rect.w, rect.h) * 0.06;
+  scanCtx.strokeStyle = '#4ade80';
+  scanCtx.lineWidth = 4;
+  scanCtx.setLineDash([]);
+  const corners = [
+    [rect.x, rect.y], [rect.x + rect.w, rect.y],
+    [rect.x, rect.y + rect.h], [rect.x + rect.w, rect.y + rect.h],
+  ];
+  for (const [cx, cy] of corners) {
+    const dx = cx === rect.x ? 1 : -1;
+    const dy = cy === rect.y ? 1 : -1;
+    scanCtx.beginPath();
+    scanCtx.moveTo(cx + dx * cornerLen, cy);
+    scanCtx.lineTo(cx, cy);
+    scanCtx.lineTo(cx, cy + dy * cornerLen);
+    scanCtx.stroke();
   }
 
   scanAnimFrame = requestAnimationFrame(scanLoop);
 }
 
-function detectPaper(context, w, h) {
-  // Sample at reduced resolution for speed
-  const step = 4;
-  const imgData = context.getImageData(0, 0, w, h);
-  const d = imgData.data;
-
-  // Threshold: find bright pixels (paper is white/light colored)
-  const threshold = 180;
-  let minX = w, minY = h, maxX = 0, maxY = 0;
-  let brightCount = 0;
-
-  for (let y = 0; y < h; y += step) {
-    for (let x = 0; x < w; x += step) {
-      const i = (y * w + x) * 4;
-      const r = d[i], g = d[i+1], b = d[i+2];
-      // Check if pixel is bright (paper-like)
-      if (r > threshold && g > threshold && b > threshold) {
-        brightCount++;
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-
-  // Need a minimum area to count as paper (at least 5% of frame)
-  const totalSamples = (w / step) * (h / step);
-  if (brightCount < totalSamples * 0.05) return null;
-
-  const rectW = maxX - minX;
-  const rectH = maxY - minY;
-  // Paper should be reasonably sized (at least 15% of frame in each dimension)
-  if (rectW < w * 0.15 || rectH < h * 0.15) return null;
-
-  // Add small padding
-  const pad = 10;
-  return {
-    x: Math.max(0, minX - pad),
-    y: Math.max(0, minY - pad),
-    w: Math.min(w - minX + pad, rectW + pad * 2),
-    h: Math.min(h - minY + pad, rectH + pad * 2),
-  };
-}
-
-// The template has the butterfly centered, with left wing in the left half
-// and right wing in the right half. We sample from 4 zones.
 function getSampleZones(rect) {
   const cx = rect.x + rect.w / 2;
-  // Butterfly body is at 46% of the page height, not 50%, so shift up
   const cy = rect.y + rect.h * 0.46;
-  const zw = rect.w * 0.12; // zone width
-  const zh = rect.h * 0.10; // zone height
+  const zw = rect.w * 0.12;
+  const zh = rect.h * 0.10;
   return [
-    // Upper left wing — pulled inward toward body center
-    { x: cx - rect.w*0.22 - zw/2, y: cy - rect.h*0.11 - zh/2, w: zw, h: zh, label: 'UL' },
-    // Lower left wing
-    { x: cx - rect.w*0.17 - zw/2, y: cy + rect.h*0.08 - zh/2, w: zw, h: zh, label: 'LL' },
-    // Upper right wing
-    { x: cx + rect.w*0.22 - zw/2, y: cy - rect.h*0.11 - zh/2, w: zw, h: zh, label: 'UR' },
-    // Lower right wing
-    { x: cx + rect.w*0.17 - zw/2, y: cy + rect.h*0.08 - zh/2, w: zw, h: zh, label: 'LR' },
+    { x: cx - rect.w*0.22 - zw/2, y: cy - rect.h*0.11 - zh/2, w: zw, h: zh },
+    { x: cx - rect.w*0.17 - zw/2, y: cy + rect.h*0.08 - zh/2, w: zw, h: zh },
+    { x: cx + rect.w*0.22 - zw/2, y: cy - rect.h*0.11 - zh/2, w: zw, h: zh },
+    { x: cx + rect.w*0.17 - zw/2, y: cy + rect.h*0.08 - zh/2, w: zw, h: zh },
   ];
-}
-
-function drawSampleZones(context, rect) {
-  const zones = getSampleZones(rect);
-  context.lineWidth = 2;
-  for (const z of zones) {
-    context.strokeStyle = 'rgba(255,255,0,0.7)';
-    context.strokeRect(z.x, z.y, z.w, z.h);
-  }
 }
 
 function sampleZoneColor(context, zone) {
@@ -1238,28 +1212,26 @@ function captureAndSample() {
   if (video.readyState < 2) return;
   const vw = video.videoWidth, vh = video.videoHeight;
 
-  // Freeze current frame
-  scanCanvas.width = vw;
-  scanCanvas.height = vh;
-  scanCtx.save();
-  scanCtx.translate(vw, 0);
-  scanCtx.scale(-1, 1);
-  scanCtx.drawImage(video, 0, 0);
-  scanCtx.restore();
+  // Freeze current frame (clean, no overlay drawn on it)
+  const captureCanvas = document.createElement('canvas');
+  captureCanvas.width = vw;
+  captureCanvas.height = vh;
+  const capCtx = captureCanvas.getContext('2d');
+  capCtx.save();
+  capCtx.translate(vw, 0);
+  capCtx.scale(-1, 1);
+  capCtx.drawImage(video, 0, 0);
+  capCtx.restore();
 
-  const rect = detectPaper(scanCtx, vw, vh);
-  if (!rect) {
-    scanMsg.textContent = 'Ingen teckning hittad — försök igen!';
-    setTimeout(() => scanLoop(), 1500);
-    return;
-  }
+  // Use the fixed guide rectangle as the paper region
+  const rect = getGuideRect(vw, vh);
 
   // Capture the actual drawing as a masked butterfly sprite
-  const sprite = captureButterflySpriteFromPaper(scanCanvas, rect);
+  const sprite = captureButterflySpriteFromPaper(captureCanvas, rect);
 
   // Sample a dominant color for the glow effect
   const zones = getSampleZones(rect);
-  const colors = zones.map(z => sampleZoneColor(scanCtx, z));
+  const colors = zones.map(z => sampleZoneColor(capCtx, z));
   // Pick the most vivid color for the glow
   let bestColor = colors[0], bestSat = 0;
   for (const c of colors) {
