@@ -1082,6 +1082,20 @@ document.getElementById('scanCancelBtn').addEventListener('click', exitScanMode)
 document.getElementById('confirmBtn').addEventListener('click', confirmButterfly);
 document.getElementById('rescanBtn').addEventListener('click', rescan);
 
+document.addEventListener('keydown', (e) => {
+  const key = e.key.toLowerCase();
+  if (key === 's' && !scanMode) {
+    enterScanMode();
+  } else if (key === ' ' && scanMode && !pendingSprite) {
+    e.preventDefault();
+    captureAndSample();
+  } else if (key === 'enter' && scanMode && pendingSprite) {
+    confirmButterfly();
+  } else if (key === 'escape' && scanMode) {
+    if (pendingSprite) { rescan(); } else { exitScanMode(); }
+  }
+});
+
 function enterScanMode() {
   scanMode = true;
   scanOverlay.classList.add('active');
