@@ -1086,6 +1086,7 @@ function enterScanMode() {
   scanMode = true;
   scanOverlay.classList.add('active');
   scanPreview.classList.remove('active');
+  scanCanvas.style.display = '';
   scanButtons.style.display = 'flex';
   scanMsg.textContent = 'Placera teckningen i rutan och tryck "Fånga!"';
   scanLoop();
@@ -1241,10 +1242,14 @@ function captureAndSample() {
   }
   const glowColor = `rgba(${bestColor.r},${bestColor.g},${bestColor.b},0.35)`;
 
+  // Stop the scan loop and hide the live feed so preview buttons are visible
+  if (scanAnimFrame) { cancelAnimationFrame(scanAnimFrame); scanAnimFrame = null; }
+
   // Show preview with confirm/rescan choice
   pendingSprite = sprite;
   pendingGlowColor = glowColor;
   scanButtons.style.display = 'none';
+  scanCanvas.style.display = 'none';
   scanPreview.classList.add('active');
 
   // Draw the captured butterfly sprite in the preview
@@ -1276,8 +1281,9 @@ function rescan() {
   pendingSprite = null;
   pendingGlowColor = null;
   scanPreview.classList.remove('active');
+  scanCanvas.style.display = '';
   scanButtons.style.display = 'flex';
-  scanMsg.textContent = 'Håll upp din fjärilsteckning framför kameran';
+  scanMsg.textContent = 'Placera teckningen i rutan och tryck "Fånga!"';
   scanLoop();
 }
 
