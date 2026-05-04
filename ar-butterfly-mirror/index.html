@@ -1087,6 +1087,7 @@ function enterScanMode() {
   scanOverlay.classList.add('active');
   scanPreview.classList.remove('active');
   scanCanvas.style.display = '';
+  scanMsg.style.display = '';
   scanButtons.style.display = 'flex';
   scanMsg.textContent = 'Placera teckningen i rutan och tryck "Fånga!"';
   scanLoop();
@@ -1230,17 +1231,23 @@ function captureAndSample() {
   // Capture the actual drawing as a masked butterfly sprite
   const sprite = captureButterflySpriteFromPaper(captureCanvas, rect);
 
-  // Sample a dominant color for the glow effect
-  const zones = getSampleZones(rect);
-  const colors = zones.map(z => sampleZoneColor(capCtx, z));
-  // Pick the most vivid color for the glow
-  let bestColor = colors[0], bestSat = 0;
-  for (const c of colors) {
-    const mx = Math.max(c.r, c.g, c.b), mn = Math.min(c.r, c.g, c.b);
-    const sat = mx > 0 ? (mx - mn) / mx : 0;
-    if (sat > bestSat) { bestSat = sat; bestColor = c; }
-  }
-  const glowColor = `rgba(${bestColor.r},${bestColor.g},${bestColor.b},0.35)`;
+  // Sample a dominant color for the glow effect (defensive clamping)
+  let glowColor = 'rgba(180,100,255,0.35)';
+  try {
+    const zones = getSampleZones(rect);
+    const colors = zones.map(z => {
+      z.x = Math.max(0, Math.min(z.x, vw - z.w));
+      z.y = Math.max(0, Math.min(z.y, vh - z.h));
+      return sampleZoneColor(capCtx, z);
+    });
+    let bestColor = colors[0], bestSat = 0;
+    for (const c of colors) {
+      const mx = Math.max(c.r, c.g, c.b), mn = Math.min(c.r, c.g, c.b);
+      const sat = mx > 0 ? (mx - mn) / mx : 0;
+      if (sat > bestSat) { bestSat = sat; bestColor = c; }
+    }
+    glowColor = `rgba(${bestColor.r},${bestColor.g},${bestColor.b},0.35)`;
+  } catch(e) { console.warn('Color sampling failed:', e); }
 
   // Stop the scan loop and hide the live feed so preview buttons are visible
   if (scanAnimFrame) { cancelAnimationFrame(scanAnimFrame); scanAnimFrame = null; }
@@ -1250,6 +1257,7 @@ function captureAndSample() {
   pendingGlowColor = glowColor;
   scanButtons.style.display = 'none';
   scanCanvas.style.display = 'none';
+  scanMsg.style.display = 'none';
   scanPreview.classList.add('active');
 
   // Draw the captured butterfly sprite in the preview
@@ -1282,6 +1290,7 @@ function rescan() {
   pendingGlowColor = null;
   scanPreview.classList.remove('active');
   scanCanvas.style.display = '';
+  scanMsg.style.display = '';
   scanButtons.style.display = 'flex';
   scanMsg.textContent = 'Placera teckningen i rutan och tryck "Fånga!"';
   scanLoop();
