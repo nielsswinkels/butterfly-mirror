@@ -74,7 +74,7 @@ ctx.lineWidth = 2.5;
 // ── Body ──
 ctx.lineWidth = 3;
 ctx.beginPath();
-ctx.ellipse(cx, cy, 10, 60, 0, 0, Math.PI * 2);
+ctx.ellipse(cx, cy + 12, 10, 55, 0, 0, Math.PI * 2);
 ctx.stroke();
 
 // Head
@@ -144,11 +144,11 @@ function drawTemplateWings(side) {
   ctx.setLineDash([5, 5]);
   ctx.beginPath();
   ctx.moveTo(cx, cy - 18);
-  ctx.quadraticCurveTo(cx + dir * s * 0.45, cy - 18 - s * 0.55, cx + dir * s * 0.95, cy - 18 - s * 0.35);
+  ctx.quadraticCurveTo(cx + dir * s * 0.5, cy - 18 - s * 0.4, cx + dir * s * 0.95, cy - 18 - s * 0.28);
   ctx.stroke();
   ctx.beginPath();
   ctx.moveTo(cx, cy - 18);
-  ctx.quadraticCurveTo(cx + dir * s * 0.3, cy - 18 - s * 0.8, cx + dir * s * 0.75, cy - 18 - s * 0.7);
+  ctx.quadraticCurveTo(cx + dir * s * 0.35, cy - 18 - s * 0.58, cx + dir * s * 0.8, cy - 18 - s * 0.52);
   ctx.stroke();
   ctx.restore();
 
